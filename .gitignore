@@ -1,0 +1,29 @@
+# macOS
+.DS_Store
+
+# Editors
+.idea/
+.vscode/
+*.swp
+
+# Local secrets and machine-specific configuration
+.env
+.env.*
+!.env.example
+!.env.*.example
+*.local.*
+config.local.*
+ui-settings.yaml
+secrets.*
+credentials.*
+*.pem
+*.key
+
+# Runtime artifacts
+node_modules/
+__pycache__/
+*.py[cod]
+.venv/
+dist/
+build/
+*.log
