@@ -1,0 +1,4 @@
+interface:
+  display_name: "Simple"
+  short_description: "将复杂内容讲成易懂中文，并配套流程图、时序图和对照表"
+  default_prompt: "使用 $simple 将这段内容讲清楚，并提供完整文字说明、流程图、时序图和对照表。"

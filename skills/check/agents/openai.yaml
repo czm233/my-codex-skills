@@ -1,0 +1,4 @@
+interface:
+  display_name: "Check"
+  short_description: "先诊断根因并对比可行方案，确认选择后再实施开发和复盘"
+  default_prompt: "使用 $check 分析这个问题，说明根因并对比可选方案，等我选择后再实施；若已完成开发，则总结修改前后的区别。"

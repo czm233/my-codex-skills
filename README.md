@@ -7,13 +7,18 @@
 ```text
 my-codex-skills/
 ├── skills/                 # 正式技能；每个子目录都是一个独立 Skill
-│   └── <skill-name>/
-│       └── SKILL.md
-├── templates/
-│   └── skill-template/     # 新技能模板
-└── scripts/
-    └── install.sh          # 安装/同步到本机 Codex
+│   ├── check/              # 开发前分析与开发后复盘
+│   └── simple/             # 把复杂内容解释清楚并生成配套图表
+└── templates/
+    └── skill-template/     # 新技能模板
 ```
+
+## 已收录 Skills
+
+| Skill | 用途 | 安装路径 |
+|---|---|---|
+| `check` | 开发前分析根因并对比方案；开发后复盘修改前后差异 | `skills/check` |
+| `simple` | 用易懂中文、流程图、时序图和对照表解释复杂内容 | `skills/simple` |
 
 ## 新建一个 Skill
 
@@ -25,33 +30,31 @@ cp -R templates/skill-template skills/my-new-skill
 
 ## 在当前电脑安装
 
-默认把仓库中的每个技能链接到 `~/.codex/skills/`：
+使用 Codex 内置的 `$skill-installer`，按需安装指定 Skill。例如：
 
-```bash
-./scripts/install.sh
+```text
+使用 $skill-installer 从 czm233/my-codex-skills 安装：
+skills/check
+skills/simple
 ```
 
-符号链接适合开发：修改仓库里的 Skill 后，Codex 会直接使用最新内容。
+也可以一次指定多个 Skill：
 
-如果目标位置已经存在同名文件或目录，脚本会停止且不会覆盖。确认旧内容可以替换后，可以显式执行：
-
-```bash
-./scripts/install.sh --force
+```text
+使用 $skill-installer 从 czm233/my-codex-skills 安装：
+skills/skill-one
+skills/skill-two
 ```
 
 ## 在其他电脑同步
 
-```bash
-git clone https://github.com/czm233/my-codex-skills.git
-cd my-codex-skills
-./scripts/install.sh
-```
+在目标电脑登录有权访问该仓库的 GitHub 账号，然后通过 `$skill-installer` 安装需要的 Skill。
 
-以后更新只需：
+`$skill-installer` 默认不会覆盖已存在的同名 Skill。需要更新时，让 Codex 删除本机旧版本并从仓库重新安装指定 Skill：
 
-```bash
-git pull --ff-only
-./scripts/install.sh
+```text
+使用 $skill-installer 重新安装 czm233/my-codex-skills 中的：
+skills/check
 ```
 
 ## 安全约定
