@@ -1,0 +1,7 @@
+interface:
+  display_name: "Reflect"
+  short_description: "复盘本次纠错并提炼候选规则，经你审核后才写入项目 AGENTS.md"
+  default_prompt: "使用 $reflect 复盘这次纠错，提炼一条有边界的候选规则，先交给我审核，不要直接写入。"
+
+policy:
+  allow_implicit_invocation: false

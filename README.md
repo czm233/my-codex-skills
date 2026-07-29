@@ -8,6 +8,7 @@
 my-codex-skills/
 ├── skills/                 # 正式技能；每个子目录都是一个独立 Skill
 │   ├── check/              # 开发前分析与开发后复盘
+│   ├── reflect/            # 从纠错中提炼候选规则，经审核后写入项目记忆
 │   └── simple/             # 把复杂内容解释清楚并生成配套图表
 └── templates/
     └── skill-template/     # 新技能模板
@@ -18,6 +19,7 @@ my-codex-skills/
 | Skill | 用途 | 安装路径 |
 |---|---|---|
 | `check` | 开发前分析根因并对比方案；开发后复盘修改前后差异 | `skills/check` |
+| `reflect` | 复盘人类纠正过程，提炼有边界的候选规则，经审核后写入项目 `AGENTS.md` | `skills/reflect` |
 | `simple` | 用易懂中文、流程图、时序图和对照表解释复杂内容 | `skills/simple` |
 
 ## 新建一个 Skill
@@ -35,6 +37,7 @@ cp -R templates/skill-template skills/my-new-skill
 ```text
 使用 $skill-installer 从 czm233/my-codex-skills 安装：
 skills/check
+skills/reflect
 skills/simple
 ```
 
