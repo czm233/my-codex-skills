@@ -1,0 +1,7 @@
+interface:
+  display_name: "After Dev"
+  short_description: "开发完成后基于实际差异复盘工作，对比修改前后及流程变化并报告验证结果"
+  default_prompt: "使用 $after-dev 复盘刚完成的开发工作，基于实际证据对比修改前后并报告验证结果。"
+
+policy:
+  allow_implicit_invocation: true

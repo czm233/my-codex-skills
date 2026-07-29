@@ -7,7 +7,8 @@
 ```text
 my-codex-skills/
 ├── skills/                 # 正式技能；每个子目录都是一个独立 Skill
-│   ├── check/              # 开发前分析与开发后复盘
+│   ├── before-dev/         # 开发前分析需求、对比方案并等待审批
+│   ├── after-dev/          # 开发完成后复盘实际改动和验证结果
 │   ├── reflect/            # 从纠错中提炼候选规则，经审核后写入项目记忆
 │   └── simple/             # 把复杂内容解释清楚并生成配套图表
 └── templates/
@@ -18,9 +19,17 @@ my-codex-skills/
 
 | Skill | 用途 | 安装路径 |
 |---|---|---|
-| `check` | 开发前分析根因并对比方案；开发后复盘修改前后差异 | `skills/check` |
+| `before-dev` | 所有开发需求实施前分析问题或目标、对比方案并等待用户审批 | `skills/before-dev` |
+| `after-dev` | 开发完成后依据实际差异复盘工作，对比修改前后、流程变化和验证结果 | `skills/after-dev` |
 | `reflect` | 复盘人类纠正过程，提炼有边界的候选规则，经审核后写入项目 `AGENTS.md` | `skills/reflect` |
 | `simple` | 用易懂中文、流程图、时序图和对照表解释复杂内容 | `skills/simple` |
+
+## 开发协作工作流
+
+1. 收到 Bug、新功能、重构、配置或其他开发需求时，先使用 `$before-dev` 进行只读分析。
+2. `$before-dev` 说明原因或能力缺口、对比可行方案、给出建议和验收标准，然后等待用户明确审批。
+3. 用户批准后再实施；方案或范围发生实质变化时重新审批。
+4. 开发完成后使用 `$after-dev`，基于实际差异和验证证据输出修改前后对比；只有流程确实改变时才输出流程对比。
 
 ## 新建一个 Skill
 
@@ -36,7 +45,8 @@ cp -R templates/skill-template skills/my-new-skill
 
 ```text
 使用 $skill-installer 从 czm233/my-codex-skills 安装：
-skills/check
+skills/before-dev
+skills/after-dev
 skills/reflect
 skills/simple
 ```
@@ -57,7 +67,8 @@ skills/skill-two
 
 ```text
 使用 $skill-installer 重新安装 czm233/my-codex-skills 中的：
-skills/check
+skills/before-dev
+skills/after-dev
 ```
 
 ## 安全约定

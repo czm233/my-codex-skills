@@ -1,0 +1,7 @@
+interface:
+  display_name: "Before Dev"
+  short_description: "开发前分析需求与原因，对比解决方案并等待用户明确审批后再实施"
+  default_prompt: "使用 $before-dev 分析这个开发需求，给出方案对比和建议，并在我审批前不要实施。"
+
+policy:
+  allow_implicit_invocation: true
