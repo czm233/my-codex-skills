@@ -1,0 +1,4 @@
+interface:
+  display_name: "Bark Notifications"
+  short_description: "Send and troubleshoot Bark iOS push notifications"
+  default_prompt: "Use $bark-notifications to send or troubleshoot a Bark iOS push notification."

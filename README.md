@@ -9,6 +9,7 @@ my-codex-skills/
 ├── skills/                 # 正式技能；每个子目录都是一个独立 Skill
 │   ├── before-dev/         # 开发前分析需求、对比方案并等待审批
 │   ├── after-dev/          # 开发完成后复盘实际改动和验证结果
+│   ├── bark-notifications/ # 发送和排查 Bark iOS 推送通知
 │   ├── reflect/            # 从纠错中提炼候选规则，经审核后写入项目记忆
 │   └── simple/             # 把复杂内容解释清楚并生成配套图表
 └── templates/
@@ -21,6 +22,7 @@ my-codex-skills/
 |---|---|---|
 | `before-dev` | 所有开发需求实施前分析问题或目标、对比方案并等待用户审批 | `skills/before-dev` |
 | `after-dev` | 开发完成后依据实际差异复盘工作，对比修改前后、流程变化和验证结果 | `skills/after-dev` |
+| `bark-notifications` | 发送、集成、测试和排查 Bark iOS 推送通知 | `skills/bark-notifications` |
 | `reflect` | 复盘人类纠正过程，提炼有边界的候选规则，经审核后写入项目 `AGENTS.md` | `skills/reflect` |
 | `simple` | 用易懂中文、流程图、时序图和对照表解释复杂内容 | `skills/simple` |
 
@@ -47,6 +49,7 @@ cp -R templates/skill-template skills/my-new-skill
 使用 $skill-installer 从 czm233/my-codex-skills 安装：
 skills/before-dev
 skills/after-dev
+skills/bark-notifications
 skills/reflect
 skills/simple
 ```
