@@ -1,0 +1,156 @@
+# Codex Stop Hook 配置指南
+
+本文记录如何在另一台 macOS 电脑上安装 `bark-notifications`，并把它接入 Codex 的用户级 `Stop` Hook。配置目标是：每次 Codex 主线程结束一个回合时，发送一次固定的 Bark 通知“本轮回复已结束”。同一个 `session_id + turn_id` 只发送一次。
+
+## 先理解组成部分
+
+Skill 目录中已经包含两条可执行命令：
+
+- `bin/bark-stop-hook`：接收 Codex 的 `Stop` 事件，去重，然后调用发送器。
+- `bin/bark-task-complete`：从 macOS 钥匙串读取 Bark Device Key，通过 Bark `/push` 接口发送固定通知。
+
+用户级 `hooks.json` 只负责把 Codex 的 `Stop` 生命周期事件指向第一条命令。不要在 `hooks.json` 中嵌入 `curl`，也不要在 `~/.codex/bin` 再复制一份 Bark 发送脚本。
+
+## 安装 Skill
+
+在目标电脑的 Codex 中使用 Skill Installer，从仓库安装本 Skill：
+
+```text
+使用 $skill-installer 从 czm233/my-codex-skills 安装：
+skills/bark-notifications
+```
+
+安装完成后，确认以下文件存在。`CODEX_HOME` 未设置时，默认值是 `~/.codex`：
+
+```text
+${CODEX_HOME:-$HOME/.codex}/skills/bark-notifications/SKILL.md
+${CODEX_HOME:-$HOME/.codex}/skills/bark-notifications/bin/bark-stop-hook
+${CODEX_HOME:-$HOME/.codex}/skills/bark-notifications/bin/bark-task-complete
+```
+
+如果本机已经有同名 Skill，先比较版本，再按 Skill Installer 的重新安装流程更新；不要静默覆盖本机独立修改。
+
+## 在本机保存 Bark Key
+
+Device Key 只保存到 macOS 钥匙串，不能写入仓库、`AGENTS.md`、`hooks.json`、脚本参数或聊天记录。
+
+在目标电脑的本地终端执行下面的命令，并在提示时粘贴 Key。Key 不会出现在命令历史中：
+
+```bash
+read -r -s BARK_DEVICE_KEY
+printf '\n'
+/usr/bin/security add-generic-password \
+  -U \
+  -a codex \
+  -s codex-bark-notifications \
+  -w "$BARK_DEVICE_KEY"
+unset BARK_DEVICE_KEY
+```
+
+脚本读取的固定钥匙串项目是：
+
+```text
+service: codex-bark-notifications
+account: codex
+```
+
+不要用 `security find-generic-password -w` 把 Key 打印到终端或日志中。
+
+## 合并用户级 hooks.json
+
+先检查目标电脑是否已经有 `hooks.json` 或 `config.toml` 中的其他 Hook。只合并下面的 `Stop` 项，不要覆盖已有的 `PreToolUse`、`PostToolUse`、Computer Use `notify` 或其他配置。
+
+Hook 命令必须使用目标电脑实际的 `CODEX_HOME` 路径。下面的 `/ABSOLUTE/CODEX_HOME` 是占位符，不能原样复制：
+
+```json
+{
+  "description": "Send Bark after every completed Codex turn.",
+  "hooks": {
+    "Stop": [
+      {
+        "hooks": [
+          {
+            "type": "command",
+            "command": "/usr/bin/python3 /ABSOLUTE/CODEX_HOME/skills/bark-notifications/bin/bark-stop-hook",
+            "timeout": 30,
+            "statusMessage": "Sending Bark turn notification"
+          }
+        ]
+      }
+    ]
+  }
+}
+```
+
+例如，默认 `CODEX_HOME` 为 `~/.codex` 的电脑，命令实际应展开为类似下面的绝对路径：
+
+```text
+/Users/<用户名>/.codex/skills/bark-notifications/bin/bark-stop-hook
+```
+
+不要在 JSON 中依赖未展开的 `~`、`$HOME` 或 `$CODEX_HOME`；Hook 命令需要稳定的绝对路径。若 Codex 使用项目级 `.codex/hooks.json`，仍应确认该项目层已被信任，并避免与用户级 Hook 重复发送。
+
+确认 Codex 的 Hook 功能已启用。不同 Codex 版本的配置键可能不同，应先读取本机现有配置，再按当前版本的配置文档启用；不要覆盖无关配置。
+
+## 审核并信任 Hook
+
+非托管命令 Hook 需要人工审核。启动或重新加载 Codex 后：
+
+1. 在 Codex CLI 执行 `/hooks`。
+2. 找到新增或变更的 Bark `Stop` Hook。
+3. 审核命令路径与脚本内容，确认它只读取钥匙串并向 Bark 发送固定消息。
+4. 信任该 Hook。
+
+Hook 定义或脚本发生变化后，可能需要重新审核；不要使用绕过信任的危险选项作为长期配置。
+
+## Dry-run 验证
+
+先只验证发送器，不访问钥匙串或 Bark：
+
+```bash
+SKILL_HOME="${CODEX_HOME:-$HOME/.codex}/skills/bark-notifications"
+printf '%s' 'Bark Hook dry-run' | \
+  "$SKILL_HOME/bin/bark-task-complete" turn_stopped --dry-run
+```
+
+预期输出类似：
+
+```text
+status=dry-run event=turn_stopped sent=false
+```
+
+再验证 Stop Hook 的去重路径。下面的测试使用临时状态目录，不发送真实通知：
+
+```bash
+SKILL_HOME="${CODEX_HOME:-$HOME/.codex}/skills/bark-notifications"
+TEST_STATE_DIR="$(mktemp -d)"
+printf '%s' '{"hook_event_name":"Stop","session_id":"dry-run-session","turn_id":"dry-run-turn","stop_hook_active":false}' | \
+  CODEX_BARK_HOOK_DRY_RUN=1 \
+  CODEX_BARK_HOOK_STATE_DIR="$TEST_STATE_DIR" \
+  /usr/bin/python3 "$SKILL_HOME/bin/bark-stop-hook"
+```
+
+预期 Hook 输出为 `{}`，并且临时目录中只出现一个去重文件。相同 `session_id + turn_id` 再运行一次，不应新增文件。
+
+## 真实验证
+
+只有在用户明确授权后，才做一次真实 Bark 验证：
+
+1. 完成一个很小的 Codex 回合。
+2. 确认 Stop Hook 状态消息出现。
+3. 检查 iPhone 是否收到“本轮回复已结束”。
+4. 只记录脱敏后的 HTTP 状态和耗时，不记录 Key、请求 URL 或对话内容。
+
+HTTP 200 只表示 Bark 接受了请求，不代表 APNs 一定已经在手机上显示；还要检查锁屏通知、横幅、声音和 Focus 设置。
+
+## 常见问题
+
+| 现象 | 检查方向 |
+| --- | --- |
+| 看不到 Hook 状态消息 | `hooks.json` 层级、Hook 功能开关、JSON 语法、Codex 重启和 `/hooks` 信任状态 |
+| 有状态消息但没有 Bark | `bark-task-complete` 的 dry-run、钥匙串 service/account、网络和 Bark API 状态 |
+| `credential-unavailable` | 本机没有正确保存 `codex-bark-notifications` / `codex` 项目 |
+| 同一回合收到多次 | 检查是否同时配置了用户级和项目级相同 Stop Hook |
+| 通知没有声音或不显示 | `level`、Bark sound、iOS 通知权限、Focus 模式和 Bark 历史记录 |
+
+通知失败不会阻止 Codex 本轮回复，也不会自动重试。需要修改发送参数时，只修改 Skill 源码中的发送入口，再重新同步本机安装版本。

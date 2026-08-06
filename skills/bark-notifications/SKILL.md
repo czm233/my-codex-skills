@@ -23,6 +23,8 @@ The automatic Codex turn notification is part of this Skill package:
 
 The user-level Stop Hook must invoke these installed Skill files. Do not create a second Bark sender under `~/.codex/bin`, embed a `curl` request in `hooks.json`, or make the Stop Hook continue the model so it can re-read this Markdown file. The Markdown Skill remains the source of Bark API and safety guidance, while the two bundled commands provide the deterministic lifecycle integration.
 
+For setting up this integration on another computer, read [references/codex-hook-setup.md](references/codex-hook-setup.md). It covers local Keychain storage, merging the user-level Hook configuration, Hook trust review, dry-run verification, and troubleshooting without putting a Device Key in the repository or chat.
+
 ## Choose the smallest interface
 
 1. For a one-off user smoke test, use the Bark App's locally copied test URL or a `curl` request with a placeholder key. The user runs it locally; do not request the key.
