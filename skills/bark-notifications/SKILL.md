@@ -14,6 +14,15 @@ Use Bark as an iOS system-notification channel. Prefer the official tutorial and
 - Redact keys from logs and errors. Do not log the full request URL because the public Bark URL normally contains the key.
 - Send only non-sensitive status information by default. Do not send conversation text, API keys, cookies, or source paths.
 
+## Codex task-completion hook integration
+
+The automatic Codex completion notification is part of this Skill package:
+
+- `bin/bark-stop-hook` is the lifecycle gate. It accepts only an explicit `task_completed` marker, deduplicates by turn, and does not ask Codex to start another model turn.
+- `bin/bark-task-complete` is the single task-status sender. It reads the Bark Device Key from the macOS Keychain and sends the fixed, non-sensitive completion payload.
+
+The user-level Stop Hook must invoke these installed Skill files. Do not create a second Bark sender under `~/.codex/bin`, embed a `curl` request in `hooks.json`, or make the Stop Hook continue the model so it can re-read this Markdown file. The Markdown Skill remains the source of Bark API and safety guidance, while the two bundled commands provide the deterministic lifecycle integration.
+
 ## Choose the smallest interface
 
 1. For a one-off user smoke test, use the Bark App's locally copied test URL or a `curl` request with a placeholder key. The user runs it locally; do not request the key.

@@ -1,0 +1,156 @@
+#!/usr/bin/env python3
+
+"""Send a whitelisted Codex task-completion status to Bark without exposing credentials."""
+
+from __future__ import annotations
+
+import json
+import subprocess
+import sys
+import unicodedata
+
+
+BARK_KEYCHAIN_SERVICE = "codex-bark-notifications"
+BARK_KEYCHAIN_ACCOUNT = "codex"
+BARK_ENDPOINT = "https://api.day.app/push"
+BARK_GROUP = "codex-task-status"
+DEFAULT_TITLE = "Codex 任务"
+MAX_TITLE_CHARS = 120
+MAX_TITLE_INPUT_CHARS = 4096
+EVENT_BODIES = {
+    "task_completed": "任务已完成",
+}
+
+
+def emit(message: str) -> None:
+    sys.stdout.write(message + "\n")
+
+
+def parse_arguments() -> tuple[str, bool] | None:
+    dry_run = False
+    event_names: list[str] = []
+
+    for argument in sys.argv[1:]:
+        if argument == "--dry-run" and not dry_run:
+            dry_run = True
+        else:
+            event_names.append(argument)
+
+    if len(event_names) != 1 or event_names[0] not in EVENT_BODIES:
+        return None
+    return event_names[0], dry_run
+
+
+def normalize_title(raw_title: str) -> str:
+    safe_characters: list[str] = []
+    for character in raw_title:
+        if character in "\r\n\t" or unicodedata.category(character).startswith("C"):
+            safe_characters.append(" ")
+        else:
+            safe_characters.append(character)
+
+    normalized = " ".join("".join(safe_characters).split())
+    return normalized[:MAX_TITLE_CHARS] or DEFAULT_TITLE
+
+
+def main() -> int:
+    parsed_arguments = parse_arguments()
+    if parsed_arguments is None:
+        emit("status=error category=unsupported-arguments")
+        return 64
+
+    event_name, dry_run = parsed_arguments
+    title = normalize_title(sys.stdin.read(MAX_TITLE_INPUT_CHARS))
+
+    if dry_run:
+        emit(f"status=dry-run event={event_name} sent=false")
+        return 0
+
+    try:
+        credential_result = subprocess.run(
+            [
+                "/usr/bin/security",
+                "find-generic-password",
+                "-a",
+                BARK_KEYCHAIN_ACCOUNT,
+                "-s",
+                BARK_KEYCHAIN_SERVICE,
+                "-w",
+            ],
+            stdin=subprocess.DEVNULL,
+            stdout=subprocess.PIPE,
+            stderr=subprocess.DEVNULL,
+            timeout=5,
+            check=False,
+        )
+    except (OSError, subprocess.TimeoutExpired):
+        emit("status=error category=credential-unavailable")
+        return 2
+
+    device_key_bytes = credential_result.stdout.strip()
+    if credential_result.returncode != 0 or not device_key_bytes:
+        emit("status=error category=credential-unavailable")
+        return 2
+
+    try:
+        device_key = device_key_bytes.decode("utf-8")
+    except UnicodeDecodeError:
+        emit("status=error category=credential-unavailable")
+        return 2
+
+    payload = json.dumps(
+        {
+            "device_key": device_key,
+            "title": title,
+            "body": EVENT_BODIES[event_name],
+            "level": "active",
+            "sound": "bell",
+            "group": BARK_GROUP,
+        },
+        ensure_ascii=False,
+        separators=(",", ":"),
+    ).encode("utf-8")
+    del device_key, device_key_bytes
+
+    try:
+        bark_result = subprocess.run(
+            [
+                "/usr/bin/curl",
+                "--fail",
+                "--silent",
+                "--connect-timeout",
+                "8",
+                "--max-time",
+                "20",
+                "--output",
+                "/dev/null",
+                "--write-out",
+                "status=%{http_code} total=%{time_total}s",
+                "--request",
+                "POST",
+                BARK_ENDPOINT,
+                "--header",
+                "Content-Type: application/json; charset=utf-8",
+                "--data-binary",
+                "@-",
+            ],
+            input=payload,
+            stdout=subprocess.PIPE,
+            stderr=subprocess.DEVNULL,
+            timeout=25,
+            check=False,
+        )
+    except (OSError, subprocess.TimeoutExpired):
+        emit("status=error category=request-failed")
+        return 3
+
+    if bark_result.returncode != 0:
+        emit(f"status=error category=request-failed curl_exit={bark_result.returncode}")
+        return 3
+
+    emit(bark_result.stdout.decode("utf-8", errors="replace"))
+    return 0
+
+
+if __name__ == "__main__":
+    raise SystemExit(main())
