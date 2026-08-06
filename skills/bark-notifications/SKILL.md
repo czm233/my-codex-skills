@@ -18,12 +18,13 @@ Use Bark as an iOS system-notification channel. Prefer the official tutorial and
 
 The automatic Codex turn notification is part of this Skill package:
 
-- `bin/bark-stop-hook` runs once for each Stop event, deduplicates by `session_id + turn_id`, and does not ask Codex to start another model turn.
-- `bin/bark-task-complete` is the single status sender. It reads the Bark Device Key from the macOS Keychain and sends the fixed, non-sensitive message “本轮回复已结束”.
+- `bin/bark-stop-hook` runs once for each Stop event, deduplicates by `session_id + turn_id`, reads only the current thread metadata (`thread/read` with `includeTurns: false`) to use its user-facing name as the Bark title, and falls back to `Codex` when that metadata is unavailable. It does not ask Codex to start another model turn or read transcript items.
+- `bin/bark-task-complete` is the single status sender. It reads the Bark Device Key from the macOS Keychain, resolves the local machine label, and sends a title in the form `[机器标签] 任务标题` with the fixed, non-sensitive message “本轮回复已结束”.
+- `bin/bark-configure-machine` writes the non-secret per-computer label to `${CODEX_HOME}/bark-notifications.json`. Keep this file outside the Skill directory and repository so every computer can use the same Skill source with a different local label.
 
 The user-level Stop Hook must invoke these installed Skill files. Do not create a second Bark sender under `~/.codex/bin`, embed a `curl` request in `hooks.json`, or make the Stop Hook continue the model so it can re-read this Markdown file. The Markdown Skill remains the source of Bark API and safety guidance, while the two bundled commands provide the deterministic lifecycle integration.
 
-For setting up this integration on another computer, read [references/codex-hook-setup.md](references/codex-hook-setup.md). It covers local Keychain storage, merging the user-level Hook configuration, Hook trust review, dry-run verification, and troubleshooting without putting a Device Key in the repository or chat.
+For setting up this integration on another computer, read [references/codex-hook-setup.md](references/codex-hook-setup.md). It covers the machine-label configuration contract, local Keychain storage, merging the user-level Hook configuration, Hook trust review, dry-run verification, and troubleshooting without putting a Device Key in the repository or chat.
 
 ## Choose the smallest interface
 

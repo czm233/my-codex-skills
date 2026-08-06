@@ -1,0 +1,127 @@
+#!/usr/bin/env python3
+
+"""Configure the non-secret machine label used by Bark notifications."""
+
+from __future__ import annotations
+
+import argparse
+import json
+import os
+import pathlib
+import sys
+import tempfile
+import unicodedata
+
+
+CONFIG_FILENAME = "bark-notifications.json"
+MAX_MACHINE_LABEL_CHARS = 24
+
+
+def codex_home() -> pathlib.Path:
+    configured_home = os.environ.get("CODEX_HOME")
+    if configured_home:
+        return pathlib.Path(configured_home).expanduser()
+    return pathlib.Path.home() / ".codex"
+
+
+def normalize_machine_label(raw_label: object) -> str | None:
+    if not isinstance(raw_label, str):
+        return None
+
+    safe_characters: list[str] = []
+    for character in raw_label:
+        if character in "\r\n\t" or unicodedata.category(character).startswith("C"):
+            safe_characters.append(" ")
+        else:
+            safe_characters.append(character)
+
+    normalized = " ".join("".join(safe_characters).split())
+    if not normalized:
+        return None
+    return normalized.replace("[", "(").replace("]", ")")
+
+
+def config_path() -> pathlib.Path:
+    return codex_home() / CONFIG_FILENAME
+
+
+def read_config() -> dict[str, object]:
+    try:
+        with config_path().open("r", encoding="utf-8") as config_file:
+            value = json.load(config_file)
+    except (OSError, ValueError, TypeError):
+        return {}
+    return value if isinstance(value, dict) else {}
+
+
+def write_machine_label(machine_label: str) -> None:
+    target_path = config_path()
+    target_path.parent.mkdir(mode=0o700, parents=True, exist_ok=True)
+    os.chmod(target_path.parent, 0o700)
+
+    config = read_config()
+    config["version"] = 1
+    config["machine_label"] = machine_label
+
+    file_descriptor, temporary_name = tempfile.mkstemp(
+        prefix=".bark-notifications.",
+        dir=str(target_path.parent),
+        text=True,
+    )
+    try:
+        with os.fdopen(file_descriptor, "w", encoding="utf-8") as config_file:
+            json.dump(config, config_file, ensure_ascii=False, indent=2)
+            config_file.write("\n")
+        os.chmod(temporary_name, 0o600)
+        os.replace(temporary_name, target_path)
+        os.chmod(target_path, 0o600)
+    finally:
+        try:
+            os.unlink(temporary_name)
+        except FileNotFoundError:
+            pass
+
+
+def parse_arguments() -> argparse.Namespace:
+    parser = argparse.ArgumentParser(
+        description="Configure the local non-secret Bark machine label."
+    )
+    action = parser.add_mutually_exclusive_group(required=True)
+    action.add_argument("--machine-label", metavar="LABEL")
+    action.add_argument("--show", action="store_true")
+    parser.add_argument(
+        "--force",
+        action="store_true",
+        help="replace an existing different label",
+    )
+    return parser.parse_args()
+
+
+def main() -> int:
+    arguments = parse_arguments()
+
+    if arguments.show:
+        machine_label = normalize_machine_label(read_config().get("machine_label"))
+        if not machine_label:
+            print("status=missing")
+            return 1
+        print(f"status=ok machine_label={machine_label}")
+        return 0
+
+    machine_label = normalize_machine_label(arguments.machine_label)
+    if not machine_label or len(machine_label) > MAX_MACHINE_LABEL_CHARS:
+        print("status=error category=invalid-machine-label")
+        return 64
+
+    existing_label = normalize_machine_label(read_config().get("machine_label"))
+    if existing_label and existing_label != machine_label and not arguments.force:
+        print("status=error category=existing-label-use-force")
+        return 73
+
+    write_machine_label(machine_label)
+    print("status=written")
+    return 0
+
+
+if __name__ == "__main__":
+    raise SystemExit(main())

@@ -1,13 +1,14 @@
 # Codex Stop Hook 配置指南
 
-本文记录如何在另一台 macOS 电脑上安装 `bark-notifications`，并把它接入 Codex 的用户级 `Stop` Hook。配置目标是：每次 Codex 主线程结束一个回合时，发送一次固定的 Bark 通知“本轮回复已结束”。同一个 `session_id + turn_id` 只发送一次。
+本文记录如何在任意 macOS 电脑上安装 `bark-notifications`，并把它接入 Codex 的用户级 `Stop` Hook。配置目标是：每次 Codex 主线程结束一个回合时，发送一次 Bark 通知“本轮回复已结束”，标题格式为 `[本机机器标签] 当前 Thread 名称`；如果 Thread 名称查询失败，则任务标题回退为 `Codex`。同一个 `session_id + turn_id` 只发送一次。
 
 ## 先理解组成部分
 
-Skill 目录中已经包含两条可执行命令：
+Skill 目录中已经包含三条可执行命令：
 
-- `bin/bark-stop-hook`：接收 Codex 的 `Stop` 事件，去重，然后调用发送器。
-- `bin/bark-task-complete`：从 macOS 钥匙串读取 Bark Device Key，通过 Bark `/push` 接口发送固定通知。
+- `bin/bark-stop-hook`：接收 Codex 的 `Stop` 事件，去重，使用当前 `CODEX_THREAD_ID` 调用 Codex App Server 的 `thread/read`（`includeTurns: false`，只取元数据），然后调用发送器。
+- `bin/bark-task-complete`：解析本机机器标签，从 macOS 钥匙串读取 Bark Device Key，通过 Bark `/push` 接口发送带机器前缀的标题和固定正文。
+- `bin/bark-configure-machine`：写入或显示本机非敏感机器标签，不读取或处理 Bark Key。
 
 用户级 `hooks.json` 只负责把 Codex 的 `Stop` 生命周期事件指向第一条命令。不要在 `hooks.json` 中嵌入 `curl`，也不要在 `~/.codex/bin` 再复制一份 Bark 发送脚本。
 
@@ -26,6 +27,7 @@ skills/bark-notifications
 ${CODEX_HOME:-$HOME/.codex}/skills/bark-notifications/SKILL.md
 ${CODEX_HOME:-$HOME/.codex}/skills/bark-notifications/bin/bark-stop-hook
 ${CODEX_HOME:-$HOME/.codex}/skills/bark-notifications/bin/bark-task-complete
+${CODEX_HOME:-$HOME/.codex}/skills/bark-notifications/bin/bark-configure-machine
 ```
 
 如果本机已经有同名 Skill，先比较版本，再按 Skill Installer 的重新安装流程更新；不要静默覆盖本机独立修改。
@@ -55,6 +57,50 @@ account: codex
 ```
 
 不要用 `security find-generic-password -w` 把 Key 打印到终端或日志中。
+
+## 配置本机机器标签
+
+机器标签是每台电脑独立的非敏感配置，不属于 Skill 源码，也不能提交到仓库。它用于让 iPhone 和 Apple Watch 区分相同 Bark Key 发来的通知。
+
+### 配置优先级
+
+发送器按以下顺序解析机器标签：
+
+1. 环境变量 `CODEX_BARK_MACHINE_LABEL`（适合企业批量部署或临时覆盖）。
+2. `${CODEX_HOME:-$HOME/.codex}/bark-notifications.json` 中的 `machine_label`。
+3. macOS `ComputerName`。
+4. `hostname -s`。
+5. `Mac`。
+
+正常部署应使用本机 JSON 配置，不要依赖设备型号列表，也不要修改 Skill 源码。配置文件格式为：
+
+```json
+{
+  "version": 1,
+  "machine_label": "<用户确认的短标签>"
+}
+```
+
+机器标签应控制在 24 个字符以内，避免换行和控制字符。安装 Agent 应先读取当前 `ComputerName` 作为建议值，再让用户确认或改成更短的标签；不要把未确认的真实电脑名称写入仓库。
+
+使用 Skill 自带命令写入配置：
+
+```bash
+SKILL_HOME="${CODEX_HOME:-$HOME/.codex}/skills/bark-notifications"
+"$SKILL_HOME/bin/bark-configure-machine" --machine-label "<用户确认的短标签>"
+"$SKILL_HOME/bin/bark-configure-machine" --show
+```
+
+如果已有配置，命令会拒绝静默覆盖不同标签；用户明确要求更换时才追加 `--force`。配置文件权限由命令设置为仅当前用户可读写。
+
+通知标题示例（仅为格式示例，不是固定设备名）：
+
+```text
+[<本机机器标签>] <当前 Codex 任务标题>
+本轮回复已结束
+```
+
+通知分组也会包含机器标签，以便在 Bark 历史记录中按电脑区分。标题前缀是主要识别方式，适合 Apple Watch 的紧凑通知展示。
 
 ## 合并用户级 hooks.json
 
@@ -151,6 +197,7 @@ HTTP 200 只表示 Bark 接受了请求，不代表 APNs 一定已经在手机�
 | 有状态消息但没有 Bark | `bark-task-complete` 的 dry-run、钥匙串 service/account、网络和 Bark API 状态 |
 | `credential-unavailable` | 本机没有正确保存 `codex-bark-notifications` / `codex` 项目 |
 | 同一回合收到多次 | 检查是否同时配置了用户级和项目级相同 Stop Hook |
+| 标题显示 `Codex` | 当前 Thread 没有设置名称，或 Hook 无法启动 App Server / 查询 `thread/read`；通知正文仍会正常发送 |
 | 通知没有声音或不显示 | `level`、Bark sound、iOS 通知权限、Focus 模式和 Bark 历史记录 |
 
-通知失败不会阻止 Codex 本轮回复，也不会自动重试。需要修改发送参数时，只修改 Skill 源码中的发送入口，再重新同步本机安装版本。
+通知失败不会阻止 Codex 本轮回复，也不会自动重试。会话名称查询失败时仍会发送通知，只把标题回退为 `Codex`；查询不会读取或发送对话正文。需要修改发送参数时，只修改 Skill 源码中的发送入口，再重新同步本机安装版本。

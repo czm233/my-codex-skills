@@ -5,6 +5,8 @@
 from __future__ import annotations
 
 import json
+import os
+import pathlib
 import subprocess
 import sys
 import unicodedata
@@ -13,8 +15,12 @@ import unicodedata
 BARK_KEYCHAIN_SERVICE = "codex-bark-notifications"
 BARK_KEYCHAIN_ACCOUNT = "codex"
 BARK_ENDPOINT = "https://api.day.app/push"
-BARK_GROUP = "codex-task-status"
+BARK_GROUP_PREFIX = "codex-task-status"
 DEFAULT_TITLE = "Codex 任务"
+DEFAULT_MACHINE_LABEL = "Mac"
+MACHINE_CONFIG_FILENAME = "bark-notifications.json"
+MACHINE_LABEL_ENV = "CODEX_BARK_MACHINE_LABEL"
+MAX_MACHINE_LABEL_CHARS = 24
 MAX_TITLE_CHARS = 120
 MAX_TITLE_INPUT_CHARS = 4096
 EVENT_BODIES = {
@@ -24,6 +30,86 @@ EVENT_BODIES = {
 
 def emit(message: str) -> None:
     sys.stdout.write(message + "\n")
+
+
+def _codex_home() -> pathlib.Path:
+    configured_home = os.environ.get("CODEX_HOME")
+    if configured_home:
+        return pathlib.Path(configured_home).expanduser()
+    return pathlib.Path.home() / ".codex"
+
+
+def normalize_machine_label(raw_label: object) -> str | None:
+    if not isinstance(raw_label, str):
+        return None
+
+    safe_characters: list[str] = []
+    for character in raw_label:
+        if character in "\r\n\t" or unicodedata.category(character).startswith("C"):
+            safe_characters.append(" ")
+        else:
+            safe_characters.append(character)
+
+    normalized = " ".join("".join(safe_characters).split())
+    if not normalized:
+        return None
+    return normalized.replace("[", "(").replace("]", ")")[:MAX_MACHINE_LABEL_CHARS]
+
+
+def _read_configured_machine_label() -> str | None:
+    config_path = _codex_home() / MACHINE_CONFIG_FILENAME
+    try:
+        with config_path.open("r", encoding="utf-8") as config_file:
+            config = json.load(config_file)
+    except (OSError, ValueError, TypeError):
+        return None
+
+    if not isinstance(config, dict):
+        return None
+    return normalize_machine_label(config.get("machine_label"))
+
+
+def _read_command_text(command: list[str]) -> str | None:
+    try:
+        result = subprocess.run(
+            command,
+            stdin=subprocess.DEVNULL,
+            stdout=subprocess.PIPE,
+            stderr=subprocess.DEVNULL,
+            timeout=1,
+            check=False,
+        )
+    except (OSError, subprocess.SubprocessError):
+        return None
+
+    if result.returncode != 0 or not result.stdout:
+        return None
+    return result.stdout.decode("utf-8", errors="replace").strip()
+
+
+def _read_macos_machine_label() -> str | None:
+    computer_name = _read_command_text(["/usr/sbin/scutil", "--get", "ComputerName"])
+    if computer_name:
+        return normalize_machine_label(computer_name)
+
+    host_name = _read_command_text(["/bin/hostname", "-s"])
+    return normalize_machine_label(host_name)
+
+
+def resolve_machine_label() -> str:
+    environment_label = normalize_machine_label(os.environ.get(MACHINE_LABEL_ENV))
+    if environment_label:
+        return environment_label
+
+    configured_label = _read_configured_machine_label()
+    if configured_label:
+        return configured_label
+
+    detected_label = _read_macos_machine_label()
+    if detected_label:
+        return detected_label
+
+    return DEFAULT_MACHINE_LABEL
 
 
 def parse_arguments() -> tuple[str, bool] | None:
@@ -41,7 +127,7 @@ def parse_arguments() -> tuple[str, bool] | None:
     return event_names[0], dry_run
 
 
-def normalize_title(raw_title: str) -> str:
+def normalize_title(raw_title: str, max_chars: int = MAX_TITLE_CHARS) -> str:
     safe_characters: list[str] = []
     for character in raw_title:
         if character in "\r\n\t" or unicodedata.category(character).startswith("C"):
@@ -50,7 +136,17 @@ def normalize_title(raw_title: str) -> str:
             safe_characters.append(character)
 
     normalized = " ".join("".join(safe_characters).split())
-    return normalized[:MAX_TITLE_CHARS] or DEFAULT_TITLE
+    return normalized[:max_chars] or DEFAULT_TITLE
+
+
+def format_notification_title(raw_title: str, machine_label: str) -> str:
+    prefix = f"[{machine_label}] "
+    available_title_chars = max(1, MAX_TITLE_CHARS - len(prefix))
+    return prefix + normalize_title(raw_title, available_title_chars)
+
+
+def format_notification_group(machine_label: str) -> str:
+    return f"{BARK_GROUP_PREFIX}:{machine_label}"[:64]
 
 
 def main() -> int:
@@ -60,7 +156,10 @@ def main() -> int:
         return 64
 
     event_name, dry_run = parsed_arguments
-    title = normalize_title(sys.stdin.read(MAX_TITLE_INPUT_CHARS))
+    machine_label = resolve_machine_label()
+    title = format_notification_title(
+        sys.stdin.read(MAX_TITLE_INPUT_CHARS), machine_label
+    )
 
     if dry_run:
         emit(f"status=dry-run event={event_name} sent=false")
@@ -105,7 +204,7 @@ def main() -> int:
             "body": EVENT_BODIES[event_name],
             "level": "active",
             "sound": "bell",
-            "group": BARK_GROUP,
+            "group": format_notification_group(machine_label),
         },
         ensure_ascii=False,
         separators=(",", ":"),
