@@ -1,6 +1,6 @@
 #!/usr/bin/env python3
 
-"""Send a whitelisted Codex task-completion status to Bark without exposing credentials."""
+"""Send a whitelisted Codex turn status to Bark without exposing credentials."""
 
 from __future__ import annotations
 
@@ -18,7 +18,7 @@ DEFAULT_TITLE = "Codex 任务"
 MAX_TITLE_CHARS = 120
 MAX_TITLE_INPUT_CHARS = 4096
 EVENT_BODIES = {
-    "task_completed": "任务已完成",
+    "turn_stopped": "本轮回复已结束",
 }
 
 

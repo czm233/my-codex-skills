@@ -1,6 +1,6 @@
 #!/usr/bin/env python3
 
-"""Send one Bark task-completion notification after an explicit final marker."""
+"""Send one Bark notification for each completed Codex turn."""
 
 from __future__ import annotations
 
@@ -12,52 +12,14 @@ import subprocess
 import sys
 
 
-MARKER_PREFIX = "<!-- codex-bark-final: "
-MARKER_SUFFIX = " -->"
-MARKER_TOKEN = "9c8e5f4d"
-VALID_EVENTS = {"task_completed"}
 BARK_COMMAND = pathlib.Path(__file__).with_name("bark-task-complete")
+EVENT_NAME = "turn_stopped"
+DEFAULT_TITLE = "Codex"
 DEFAULT_STATE_DIR = pathlib.Path("/Users/czm/.codex/state/bark-stop-hook")
 
 
 def emit(payload: dict[str, object]) -> None:
     sys.stdout.write(json.dumps(payload, ensure_ascii=False))
-
-
-def parse_notification(message: object) -> tuple[str, str] | None:
-    if not isinstance(message, str):
-        return None
-
-    stripped_message = message.rstrip()
-    if not stripped_message:
-        return None
-
-    marker_line = stripped_message.rsplit("\n", 1)[-1]
-    if not marker_line.startswith(MARKER_PREFIX) or not marker_line.endswith(MARKER_SUFFIX):
-        return None
-
-    raw_payload = marker_line[len(MARKER_PREFIX) : -len(MARKER_SUFFIX)]
-    if len(raw_payload) > 2048:
-        return None
-
-    try:
-        payload = json.loads(raw_payload)
-    except (json.JSONDecodeError, TypeError):
-        return None
-
-    if not isinstance(payload, dict) or set(payload) != {"token", "event", "title"}:
-        return None
-    if payload.get("token") != MARKER_TOKEN:
-        return None
-
-    event_name = payload.get("event")
-    title = payload.get("title")
-    if event_name not in VALID_EVENTS or not isinstance(title, str):
-        return None
-    if not title.strip() or len(title) > 512 or "\x00" in title:
-        return None
-
-    return event_name, title
 
 
 def main() -> int:
@@ -70,12 +32,6 @@ def main() -> int:
     if not isinstance(event, dict) or event.get("hook_event_name") != "Stop":
         emit({})
         return 0
-
-    notification = parse_notification(event.get("last_assistant_message"))
-    if notification is None:
-        emit({})
-        return 0
-    event_name, title = notification
 
     # A continuation pass has already been requested for this stop event.
     if event.get("stop_hook_active"):
@@ -104,7 +60,7 @@ def main() -> int:
         emit({"systemMessage": "Bark task notification skipped (dedupe state unavailable)."})
         return 0
 
-    command = [str(BARK_COMMAND), event_name]
+    command = [str(BARK_COMMAND), EVENT_NAME]
     if os.environ.get("CODEX_BARK_HOOK_DRY_RUN") == "1":
         command.append("--dry-run")
 
@@ -112,7 +68,7 @@ def main() -> int:
         result = subprocess.run(
             command,
             cwd=event.get("cwd") or None,
-            input=title.encode("utf-8"),
+            input=DEFAULT_TITLE.encode("utf-8"),
             stdout=subprocess.DEVNULL,
             stderr=subprocess.DEVNULL,
             timeout=25,
