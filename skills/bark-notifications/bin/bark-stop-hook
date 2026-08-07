@@ -32,6 +32,11 @@ def emit(payload: dict[str, object]) -> None:
     sys.stdout.write(json.dumps(payload, ensure_ascii=False))
 
 
+def _current_thread_id() -> str | None:
+    thread_id = os.environ.get("CODEX_THREAD_ID", "").strip()
+    return thread_id or None
+
+
 def _terminate_process(process: subprocess.Popen[bytes]) -> None:
     if process.poll() is not None:
         return
@@ -167,7 +172,7 @@ def _resolve_thread_title(event: dict[str, Any]) -> str:
             return " ".join(value.split())
 
     thread_id = str(
-        os.environ.get("CODEX_THREAD_ID")
+        _current_thread_id()
         or event.get("thread_id")
         or event.get("threadId")
         or event.get("session_id")
@@ -198,6 +203,16 @@ def main() -> int:
     session_id = str(event.get("session_id") or "")
     turn_id = str(event.get("turn_id") or "")
     if not session_id or not turn_id:
+        emit({})
+        return 0
+
+    # Codex Desktop can run ephemeral model turns for UI-only features such as
+    # ambient suggestions. Those turns inherit the visible thread id through
+    # CODEX_THREAD_ID but carry a different Stop-event session id. Ignore them
+    # before creating dedupe state or invoking Bark. Preserve the previous
+    # behavior on surfaces that do not provide CODEX_THREAD_ID.
+    current_thread_id = _current_thread_id()
+    if current_thread_id and session_id != current_thread_id:
         emit({})
         return 0
 

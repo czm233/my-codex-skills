@@ -1,12 +1,12 @@
 # Codex Stop Hook 配置指南
 
-本文记录如何在任意 macOS 电脑上安装 `bark-notifications`，并把它接入 Codex 的用户级 `Stop` Hook。配置目标是：每次 Codex 主线程结束一个回合时，发送一次 Bark 通知“本轮回复已结束”，标题格式为 `[本机机器标签] 当前 Thread 名称`；如果 Thread 名称查询失败，则任务标题回退为 `Codex`。同一个 `session_id + turn_id` 只发送一次。
+本文记录如何在任意 macOS 电脑上安装 `bark-notifications`，并把它接入 Codex 的用户级 `Stop` Hook。配置目标是：每次 Codex 用户可见主线程结束一个回合时，发送一次 Bark 通知“本轮回复已结束”，标题格式为 `[本机机器标签] 当前 Thread 名称`；如果 Thread 名称查询失败，则任务标题回退为 `Codex`。同一个 `session_id + turn_id` 只发送一次，Codex Desktop 为界面功能启动的内部临时 turn 不发送。
 
 ## 先理解组成部分
 
 Skill 目录中已经包含三条可执行命令：
 
-- `bin/bark-stop-hook`：接收 Codex 的 `Stop` 事件，去重，使用当前 `CODEX_THREAD_ID` 调用 Codex App Server 的 `thread/read`（`includeTurns: false`，只取元数据），然后调用发送器。
+- `bin/bark-stop-hook`：接收 Codex 的 `Stop` 事件；存在 `CODEX_THREAD_ID` 时先确认事件 `session_id` 与当前可见线程一致，不一致的内部临时 turn 直接跳过；随后去重，调用 Codex App Server 的 `thread/read`（`includeTurns: false`，只取元数据），再调用发送器。未提供 `CODEX_THREAD_ID` 的 Codex 表面保持原有按事件会话通知的兼容行为。
 - `bin/bark-task-complete`：解析本机机器标签，从 macOS 钥匙串读取 Bark Device Key，通过 Bark `/push` 接口发送带机器前缀的标题和固定正文。
 - `bin/bark-configure-machine`：写入或显示本机非敏感机器标签，不读取或处理 Bark Key。
 
@@ -171,12 +171,25 @@ status=dry-run event=turn_stopped sent=false
 SKILL_HOME="${CODEX_HOME:-$HOME/.codex}/skills/bark-notifications"
 TEST_STATE_DIR="$(mktemp -d)"
 printf '%s' '{"hook_event_name":"Stop","session_id":"dry-run-session","turn_id":"dry-run-turn","stop_hook_active":false}' | \
+  CODEX_THREAD_ID="dry-run-session" \
   CODEX_BARK_HOOK_DRY_RUN=1 \
   CODEX_BARK_HOOK_STATE_DIR="$TEST_STATE_DIR" \
   /usr/bin/python3 "$SKILL_HOME/bin/bark-stop-hook"
 ```
 
 预期 Hook 输出为 `{}`，并且临时目录中只出现一个去重文件。相同 `session_id + turn_id` 再运行一次，不应新增文件。
+
+再用一个不同的事件会话验证内部 turn 过滤：
+
+```bash
+printf '%s' '{"hook_event_name":"Stop","session_id":"internal-session","turn_id":"internal-turn","stop_hook_active":false}' | \
+  CODEX_THREAD_ID="dry-run-session" \
+  CODEX_BARK_HOOK_DRY_RUN=1 \
+  CODEX_BARK_HOOK_STATE_DIR="$TEST_STATE_DIR" \
+  /usr/bin/python3 "$SKILL_HOME/bin/bark-stop-hook"
+```
+
+预期仍输出 `{}`，临时目录中的去重文件数量不变，表示内部临时 turn 没有进入通知链路。测试兼容回退时，可通过 `env -u CODEX_THREAD_ID` 执行原有 Dry-run；此时有效 Stop 事件仍按 `session_id + turn_id` 去重和通知。
 
 ## 真实验证
 
@@ -196,7 +209,7 @@ HTTP 200 只表示 Bark 接受了请求，不代表 APNs 一定已经在手机�
 | 看不到 Hook 状态消息 | `hooks.json` 层级、Hook 功能开关、JSON 语法、Codex 重启和 `/hooks` 信任状态 |
 | 有状态消息但没有 Bark | `bark-task-complete` 的 dry-run、钥匙串 service/account、网络和 Bark API 状态 |
 | `credential-unavailable` | 本机没有正确保存 `codex-bark-notifications` / `codex` 项目 |
-| 同一回合收到多次 | 检查是否同时配置了用户级和项目级相同 Stop Hook |
+| 同一用户回合收到多次 | 先确认本机安装版包含 `CODEX_THREAD_ID` 主线程过滤，再检查是否同时配置了用户级和项目级相同 Stop Hook |
 | 标题显示 `Codex` | 当前 Thread 没有设置名称，或 Hook 无法启动 App Server / 查询 `thread/read`；通知正文仍会正常发送 |
 | 通知没有声音或不显示 | `level`、Bark sound、iOS 通知权限、Focus 模式和 Bark 历史记录 |
 
