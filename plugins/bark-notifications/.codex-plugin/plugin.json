@@ -1,6 +1,6 @@
 {
   "name": "bark-notifications",
-  "version": "0.2.0+codex.20260813070013",
+  "version": "0.2.0+codex.20260813071840",
   "description": "Send a fixed Bark notification after each completed Codex turn.",
   "author": {
     "name": "czm233",

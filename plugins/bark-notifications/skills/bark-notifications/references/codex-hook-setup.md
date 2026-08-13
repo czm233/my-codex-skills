@@ -34,6 +34,8 @@ codex plugin add bark-notifications@my-codex-skills
 
 如果本机还残留旧的 Bark Skill 或用户级 Bark Hook，应先按迁移清单精确删除旧项；不要覆盖其他 Hook。
 
+完成迁移后必须重启 Codex Desktop，或结束并重新启动对应的 Codex CLI/app-server 会话。Codex 会在会话启动时加载 Hook；已经运行的旧会话可能仍在内存中保留旧 `hooks.json`，即使磁盘上的旧文件已经删除，也会继续尝试执行旧路径并报“文件不存在”。重启后用 `/hooks` 确认 Stop Hook 的来源显示为 `bark-notifications@my-codex-skills`，命令路径包含 `${PLUGIN_ROOT}`；不要为了消除旧报错重新创建旧用户级 Hook。
+
 ## 在本机保存 Bark Key
 
 Device Key 只保存到 macOS 钥匙串，不能写入仓库、`AGENTS.md`、`hooks.json`、脚本参数或聊天记录。
@@ -179,6 +181,7 @@ HTTP 200 只表示 Bark 接受了请求，不代表 APNs 一定已经在手机�
 
 | 现象 | 检查方向 |
 | --- | --- |
+| 仍看到旧 `/Users/.../.codex/skills/bark-notifications/...` 报错 | 结束迁移前启动的 Codex Desktop/app-server 或 CLI 会话并重新启动；不要恢复旧 `hooks.json` |
 | 看不到 Hook 状态消息 | `hooks.json` 层级、Hook 功能开关、JSON 语法、Codex 重启和 `/hooks` 信任状态 |
 | 有状态消息但没有 Bark | `bark-task-complete` 的 dry-run、钥匙串 service/account、网络和 Bark API 状态 |
 | `credential-unavailable` | 本机没有正确保存 `codex-bark-notifications` / `codex` 项目 |

@@ -46,6 +46,8 @@ cp -R templates/skill-template skills/my-new-skill
 
 使用 Codex 的插件市场安装 `bark-notifications`。它会同时安装 Skill 和插件级 Stop Hook，不需要手动编辑 `~/.codex/hooks.json`。
 
+迁移或更新后请重启 Codex Desktop，并重新打开需要使用通知的会话；旧的 CLI/app-server 会话可能仍在内存中缓存已删除的旧 Hook 路径。
+
 独立 Skills 仍使用 Codex 内置的 `$skill-installer`，按需安装指定 Skill。例如：
 
 ```text
