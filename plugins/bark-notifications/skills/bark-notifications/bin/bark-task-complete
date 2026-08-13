@@ -16,11 +16,13 @@ BARK_KEYCHAIN_SERVICE = "codex-bark-notifications"
 BARK_KEYCHAIN_ACCOUNT = "codex"
 BARK_ENDPOINT = "https://api.day.app/push"
 BARK_GROUP_PREFIX = "codex-task-status"
-FIXED_TITLE = "Codex"
 DEFAULT_MACHINE_LABEL = "Mac"
 MACHINE_CONFIG_FILENAME = "bark-notifications.json"
 MACHINE_LABEL_ENV = "CODEX_BARK_MACHINE_LABEL"
 MAX_MACHINE_LABEL_CHARS = 24
+DEFAULT_SESSION_TITLE = "本轮回复已结束"
+MAX_SESSION_TITLE_CHARS = 120
+MAX_SESSION_TITLE_INPUT_CHARS = 4096
 EVENT_BODIES = {
     "turn_stopped": "本轮回复已结束",
 }
@@ -52,6 +54,21 @@ def normalize_machine_label(raw_label: object) -> str | None:
     if not normalized:
         return None
     return normalized.replace("[", "(").replace("]", ")")[:MAX_MACHINE_LABEL_CHARS]
+
+
+def normalize_session_title(raw_title: object) -> str:
+    if not isinstance(raw_title, str):
+        return DEFAULT_SESSION_TITLE
+
+    safe_characters: list[str] = []
+    for character in raw_title:
+        if character in "\r\n\t" or unicodedata.category(character).startswith("C"):
+            safe_characters.append(" ")
+        else:
+            safe_characters.append(character)
+
+    normalized = " ".join("".join(safe_characters).split())
+    return normalized[:MAX_SESSION_TITLE_CHARS] or DEFAULT_SESSION_TITLE
 
 
 def _read_configured_machine_label() -> str | None:
@@ -137,9 +154,8 @@ def main() -> int:
 
     event_name, dry_run = parsed_arguments
     machine_label = resolve_machine_label()
-    # The lifecycle contract permits only a fixed, non-sensitive title/body.
-    # Machine identity stays in the Bark group and never enters notification text.
-    title = FIXED_TITLE
+    title = machine_label
+    session_title = normalize_session_title(sys.stdin.read(MAX_SESSION_TITLE_INPUT_CHARS))
 
     if dry_run:
         emit(f"status=dry-run event={event_name} sent=false")
@@ -181,7 +197,7 @@ def main() -> int:
         {
             "device_key": device_key,
             "title": title,
-            "body": EVENT_BODIES[event_name],
+            "body": session_title,
             "level": "active",
             "sound": "bell",
             "group": format_notification_group(machine_label),

@@ -1,6 +1,6 @@
 # Codex Stop Hook 配置指南
 
-本文记录如何在任意 macOS 电脑上安装用户级 `bark-notifications` 插件。插件启用并信任后，每次 Codex 用户可见主线程结束一个回合时发送一次固定 Bark 通知，标题为 `Codex`，正文为“本轮回复已结束”。同一个 `session_id + turn_id` 只发送一次，Codex Desktop 为界面功能启动的内部临时 turn 不发送。插件停用或卸载后，插件 Hook 不再加载。
+本文记录如何在任意 macOS 电脑上安装用户级 `bark-notifications` 插件。插件启用并信任后，每次 Codex 用户可见主线程结束一个回合时发送一次 Bark 通知：标题为本机机器标签，正文为当前 Session 的用户可见标题。同一个 `session_id + turn_id` 只发送一次，Codex Desktop 为界面功能启动的内部临时 turn 不发送。插件停用或卸载后，插件 Hook 不再加载。
 
 ## 先理解组成部分
 
@@ -8,7 +8,7 @@
 
 - `hooks/hooks.json`：插件自带的用户级 `Stop` Hook，不修改 `~/.codex/hooks.json`。
 - `bin/bark-stop-hook`：接收插件的 `Stop` 事件；存在 `CODEX_THREAD_ID` 时先确认事件 `session_id` 与当前可见线程一致，不一致的内部临时 turn 直接跳过；随后去重，再调用发送器。未提供 `CODEX_THREAD_ID` 的 Codex 表面保持原有按事件会话通知的兼容行为。
-- `bin/bark-task-complete`：解析本机机器标签，从 macOS 钥匙串读取 Bark Device Key，通过 Bark `/push` 接口发送固定标题和正文，机器标签仅用于 Bark 分组。
+- `bin/bark-task-complete`：解析本机机器标签，从 macOS 钥匙串读取 Bark Device Key，通过 Bark `/push` 接口发送机器标签和经过清洗的 Session 标题。
 - `bin/bark-configure-machine`：写入或显示本机非敏感机器标签，不读取或处理 Bark Key。
 
 插件 Hook 通过 `${PLUGIN_ROOT}` 调用 Skill 内脚本。不要手动编辑 `~/.codex/hooks.json`，也不要在 `~/.codex/bin` 再复制一份 Bark 发送脚本。
@@ -98,14 +98,14 @@ SKILL_HOME="$PLUGIN_ROOT/skills/bark-notifications"
 
 如果已有配置，命令会拒绝静默覆盖不同标签；用户明确要求更换时才追加 `--force`。配置文件权限由命令设置为仅当前用户可读写。
 
-通知标题和正文是固定的；机器标签只用于 Bark 分组，不会进入通知文本：
+通知标题使用机器标签，正文使用 Session 标题。机器标签同时用于 Bark 分组：
 
 ```text
-[Codex]
-本轮回复已结束
+MacBook Air
+skill维护-bark-notifications
 ```
 
-通知分组会包含机器标签，以便在 Bark 历史记录中按电脑区分。
+通知分组会包含机器标签，以便在 Bark 历史记录中按电脑区分。Session 标题只读取 `thread.name` 元数据，不读取对话正文；如果 Thread 尚未命名或读取失败，正文回退为“本轮回复已结束”。
 
 ## 插件 Hook 生命周期
 
@@ -119,7 +119,7 @@ SKILL_HOME="$PLUGIN_ROOT/skills/bark-notifications"
 
 1. 在 Codex CLI 执行 `/hooks`。
 2. 找到新增或变更的 Bark `Stop` Hook。
-3. 审核命令路径与脚本内容，确认它只读取钥匙串并向 Bark 发送固定消息。
+3. 审核命令路径与脚本内容，确认它只读取钥匙串和 Thread 标题元数据，并向 Bark 发送机器标签与 Session 标题。
 4. 信任该 Hook。
 
 Hook 定义或脚本发生变化后，可能需要重新审核；不要使用绕过信任的危险选项作为长期配置。
@@ -172,7 +172,7 @@ printf '%s' '{"hook_event_name":"Stop","session_id":"internal-session","turn_id"
 
 1. 完成一个很小的 Codex 回合。
 2. 确认 Stop Hook 状态消息出现。
-3. 检查 iPhone 是否收到“本轮回复已结束”。
+3. 检查 iPhone 是否收到标题为本机机器标签、正文为当前 Session 标题的通知；若 Session 尚未命名，则正文为“本轮回复已结束”。
 4. 只记录脱敏后的 HTTP 状态和耗时，不记录 Key、请求 URL 或对话内容。
 
 HTTP 200 只表示 Bark 接受了请求，不代表 APNs 一定已经在手机上显示；还要检查锁屏通知、横幅、声音和 Focus 设置。
@@ -186,7 +186,7 @@ HTTP 200 只表示 Bark 接受了请求，不代表 APNs 一定已经在手机�
 | 有状态消息但没有 Bark | `bark-task-complete` 的 dry-run、钥匙串 service/account、网络和 Bark API 状态 |
 | `credential-unavailable` | 本机没有正确保存 `codex-bark-notifications` / `codex` 项目 |
 | 同一用户回合收到多次 | 先确认本机安装版包含 `CODEX_THREAD_ID` 主线程过滤，再检查是否同时配置了用户级和项目级相同 Stop Hook |
-| 标题显示 `Codex` | 这是固定标题；通知正文仍为“本轮回复已结束” |
+| 标题或正文显示回退文案 | 机器标签配置或 Thread 标题暂时不可用；检查本机标签配置、`CODEX_THREAD_ID` 和 `thread/read` 元数据读取 |
 | 通知没有声音或不显示 | `level`、Bark sound、iOS 通知权限、Focus 模式和 Bark 历史记录 |
 
 通知失败不会阻止 Codex 本轮回复，也不会自动重试。通知不读取或发送对话正文。需要修改发送参数时，只修改插件源码中的发送入口，再重新安装或刷新插件。
