@@ -1,0 +1,109 @@
+#!/usr/bin/env python3
+
+"""Send one Bark notification for each completed Codex turn."""
+
+from __future__ import annotations
+
+import hashlib
+import json
+import os
+import pathlib
+import subprocess
+import sys
+from typing import Any
+
+
+BARK_COMMAND = pathlib.Path(__file__).with_name("bark-task-complete")
+EVENT_NAME = "turn_stopped"
+CODEX_HOME = pathlib.Path(
+    os.environ.get("CODEX_HOME", pathlib.Path.home() / ".codex")
+).expanduser()
+DEFAULT_STATE_DIR = pathlib.Path(
+    os.environ.get("PLUGIN_DATA", str(CODEX_HOME / "state"))
+) / "bark-stop-hook"
+
+
+def emit(payload: dict[str, object]) -> None:
+    sys.stdout.write(json.dumps(payload, ensure_ascii=False))
+
+
+def _current_thread_id() -> str | None:
+    thread_id = os.environ.get("CODEX_THREAD_ID", "").strip()
+    return thread_id or None
+
+
+def main() -> int:
+    try:
+        event = json.load(sys.stdin)
+    except (json.JSONDecodeError, OSError, TypeError):
+        emit({})
+        return 0
+
+    if not isinstance(event, dict) or event.get("hook_event_name") != "Stop":
+        emit({})
+        return 0
+
+    # A continuation pass has already been requested for this stop event.
+    if event.get("stop_hook_active"):
+        emit({})
+        return 0
+
+    session_id = str(event.get("session_id") or "")
+    turn_id = str(event.get("turn_id") or "")
+    if not session_id or not turn_id:
+        emit({})
+        return 0
+
+    # Codex Desktop can run ephemeral model turns for UI-only features such as
+    # ambient suggestions. Those turns inherit the visible thread id through
+    # CODEX_THREAD_ID but carry a different Stop-event session id. Ignore them
+    # before creating dedupe state or invoking Bark. Preserve the previous
+    # behavior on surfaces that do not provide CODEX_THREAD_ID.
+    current_thread_id = _current_thread_id()
+    if current_thread_id and session_id != current_thread_id:
+        emit({})
+        return 0
+
+    dedupe_id = hashlib.sha256(f"{session_id}\0{turn_id}".encode()).hexdigest()
+    state_dir = pathlib.Path(
+        os.environ.get("CODEX_BARK_HOOK_STATE_DIR", str(DEFAULT_STATE_DIR))
+    )
+    try:
+        state_dir.mkdir(mode=0o700, parents=True, exist_ok=True)
+        marker_path = state_dir / f"{dedupe_id}.sent"
+        marker_fd = os.open(marker_path, os.O_CREAT | os.O_EXCL | os.O_WRONLY, 0o600)
+        os.close(marker_fd)
+    except FileExistsError:
+        emit({})
+        return 0
+    except OSError:
+        emit({"systemMessage": "Bark task notification skipped (dedupe state unavailable)."})
+        return 0
+
+    command = [str(BARK_COMMAND), EVENT_NAME]
+    if os.environ.get("CODEX_BARK_HOOK_DRY_RUN") == "1":
+        command.append("--dry-run")
+
+    try:
+        result = subprocess.run(
+            command,
+            cwd=event.get("cwd") or None,
+            input=b"Codex",
+            stdout=subprocess.DEVNULL,
+            stderr=subprocess.DEVNULL,
+            timeout=25,
+            check=False,
+        )
+    except (OSError, subprocess.TimeoutExpired):
+        emit({"systemMessage": "Bark task notification failed (redacted)."})
+        return 0
+
+    if result.returncode != 0:
+        emit({"systemMessage": "Bark task notification failed (redacted)."})
+    else:
+        emit({})
+    return 0
+
+
+if __name__ == "__main__":
+    raise SystemExit(main())

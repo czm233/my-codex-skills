@@ -1,36 +1,38 @@
 # Codex Stop Hook 配置指南
 
-本文记录如何在任意 macOS 电脑上安装 `bark-notifications`，并把它接入 Codex 的用户级 `Stop` Hook。配置目标是：每次 Codex 用户可见主线程结束一个回合时，发送一次 Bark 通知“本轮回复已结束”，标题格式为 `[本机机器标签] 当前 Thread 名称`；如果 Thread 名称查询失败，则任务标题回退为 `Codex`。同一个 `session_id + turn_id` 只发送一次，Codex Desktop 为界面功能启动的内部临时 turn 不发送。
+本文记录如何在任意 macOS 电脑上安装用户级 `bark-notifications` 插件。插件启用并信任后，每次 Codex 用户可见主线程结束一个回合时发送一次固定 Bark 通知，标题为 `Codex`，正文为“本轮回复已结束”。同一个 `session_id + turn_id` 只发送一次，Codex Desktop 为界面功能启动的内部临时 turn 不发送。插件停用或卸载后，插件 Hook 不再加载。
 
 ## 先理解组成部分
 
-Skill 目录中已经包含三条可执行命令：
+插件中包含三条可执行命令和一个生命周期 Hook：
 
-- `bin/bark-stop-hook`：接收 Codex 的 `Stop` 事件；存在 `CODEX_THREAD_ID` 时先确认事件 `session_id` 与当前可见线程一致，不一致的内部临时 turn 直接跳过；随后去重，调用 Codex App Server 的 `thread/read`（`includeTurns: false`，只取元数据），再调用发送器。未提供 `CODEX_THREAD_ID` 的 Codex 表面保持原有按事件会话通知的兼容行为。
-- `bin/bark-task-complete`：解析本机机器标签，从 macOS 钥匙串读取 Bark Device Key，通过 Bark `/push` 接口发送带机器前缀的标题和固定正文。
+- `hooks/hooks.json`：插件自带的用户级 `Stop` Hook，不修改 `~/.codex/hooks.json`。
+- `bin/bark-stop-hook`：接收插件的 `Stop` 事件；存在 `CODEX_THREAD_ID` 时先确认事件 `session_id` 与当前可见线程一致，不一致的内部临时 turn 直接跳过；随后去重，再调用发送器。未提供 `CODEX_THREAD_ID` 的 Codex 表面保持原有按事件会话通知的兼容行为。
+- `bin/bark-task-complete`：解析本机机器标签，从 macOS 钥匙串读取 Bark Device Key，通过 Bark `/push` 接口发送固定标题和正文，机器标签仅用于 Bark 分组。
 - `bin/bark-configure-machine`：写入或显示本机非敏感机器标签，不读取或处理 Bark Key。
 
-用户级 `hooks.json` 只负责把 Codex 的 `Stop` 生命周期事件指向第一条命令。不要在 `hooks.json` 中嵌入 `curl`，也不要在 `~/.codex/bin` 再复制一份 Bark 发送脚本。
+插件 Hook 通过 `${PLUGIN_ROOT}` 调用 Skill 内脚本。不要手动编辑 `~/.codex/hooks.json`，也不要在 `~/.codex/bin` 再复制一份 Bark 发送脚本。
 
-## 安装 Skill
+## 安装用户级插件
 
-在目标电脑的 Codex 中使用 Skill Installer，从仓库安装本 Skill：
+在目标电脑的终端中，将包含仓库 `.agents/plugins/marketplace.json` 的仓库根目录加入本地插件市场，然后安装插件。下面的路径只是示例；请替换为目标电脑上的实际仓库路径：
 
-```text
-使用 $skill-installer 从 czm233/my-codex-skills 安装：
-skills/bark-notifications
+```bash
+REPO_ROOT="/path/to/my-codex-skills"
+codex plugin marketplace add "$REPO_ROOT"
+codex plugin add bark-notifications@my-codex-skills
 ```
 
-安装完成后，确认以下文件存在。`CODEX_HOME` 未设置时，默认值是 `~/.codex`：
+`codex plugin add` 默认安装到当前用户作用域。不要把插件目录复制到 `~/.codex/skills`，也不要使用 `$plugin-creator` 代替安装命令；`plugin-creator` 只用于开发或校验插件目录。
+
+插件安装完成后，确认插件已启用并通过 Hook 信任审核。插件缓存目录由 Codex 管理，不要把缓存绝对路径写进配置。
 
 ```text
-${CODEX_HOME:-$HOME/.codex}/skills/bark-notifications/SKILL.md
-${CODEX_HOME:-$HOME/.codex}/skills/bark-notifications/bin/bark-stop-hook
-${CODEX_HOME:-$HOME/.codex}/skills/bark-notifications/bin/bark-task-complete
-${CODEX_HOME:-$HOME/.codex}/skills/bark-notifications/bin/bark-configure-machine
+插件缓存根目录/skills/bark-notifications/SKILL.md
+插件缓存根目录/hooks/hooks.json
 ```
 
-如果本机已经有同名 Skill，先比较版本，再按 Skill Installer 的重新安装流程更新；不要静默覆盖本机独立修改。
+如果本机还残留旧的 Bark Skill 或用户级 Bark Hook，应先按迁移清单精确删除旧项；不要覆盖其他 Hook。
 
 ## 在本机保存 Bark Key
 
@@ -86,57 +88,28 @@ account: codex
 使用 Skill 自带命令写入配置：
 
 ```bash
-SKILL_HOME="${CODEX_HOME:-$HOME/.codex}/skills/bark-notifications"
+PLUGIN_ROOT="<插件安装根目录>"
+SKILL_HOME="$PLUGIN_ROOT/skills/bark-notifications"
 "$SKILL_HOME/bin/bark-configure-machine" --machine-label "<用户确认的短标签>"
 "$SKILL_HOME/bin/bark-configure-machine" --show
 ```
 
 如果已有配置，命令会拒绝静默覆盖不同标签；用户明确要求更换时才追加 `--force`。配置文件权限由命令设置为仅当前用户可读写。
 
-通知标题示例（仅为格式示例，不是固定设备名）：
+通知标题和正文是固定的；机器标签只用于 Bark 分组，不会进入通知文本：
 
 ```text
-[<本机机器标签>] <当前 Codex 任务标题>
+[Codex]
 本轮回复已结束
 ```
 
-通知分组也会包含机器标签，以便在 Bark 历史记录中按电脑区分。标题前缀是主要识别方式，适合 Apple Watch 的紧凑通知展示。
+通知分组会包含机器标签，以便在 Bark 历史记录中按电脑区分。
 
-## 合并用户级 hooks.json
+## 插件 Hook 生命周期
 
-先检查目标电脑是否已经有 `hooks.json` 或 `config.toml` 中的其他 Hook。只合并下面的 `Stop` 项，不要覆盖已有的 `PreToolUse`、`PostToolUse`、Computer Use `notify` 或其他配置。
+不需要合并或编辑用户级 `hooks.json`。Codex 从已启用插件中加载 `hooks/hooks.json`，命令使用 `${PLUGIN_ROOT}` 定位插件内脚本。插件 Hook 与用户级、项目级 Hook 共同加载；如果另一层仍配置旧 Bark Hook，会造成重复通知，因此迁移时要删除旧 Bark Hook。
 
-Hook 命令必须使用目标电脑实际的 `CODEX_HOME` 路径。下面的 `/ABSOLUTE/CODEX_HOME` 是占位符，不能原样复制：
-
-```json
-{
-  "description": "Send Bark after every completed Codex turn.",
-  "hooks": {
-    "Stop": [
-      {
-        "hooks": [
-          {
-            "type": "command",
-            "command": "/usr/bin/python3 /ABSOLUTE/CODEX_HOME/skills/bark-notifications/bin/bark-stop-hook",
-            "timeout": 30,
-            "statusMessage": "Sending Bark turn notification"
-          }
-        ]
-      }
-    ]
-  }
-}
-```
-
-例如，默认 `CODEX_HOME` 为 `~/.codex` 的电脑，命令实际应展开为类似下面的绝对路径：
-
-```text
-/Users/<用户名>/.codex/skills/bark-notifications/bin/bark-stop-hook
-```
-
-不要在 JSON 中依赖未展开的 `~`、`$HOME` 或 `$CODEX_HOME`；Hook 命令需要稳定的绝对路径。若 Codex 使用项目级 `.codex/hooks.json`，仍应确认该项目层已被信任，并避免与用户级 Hook 重复发送。
-
-确认 Codex 的 Hook 功能已启用。不同 Codex 版本的配置键可能不同，应先读取本机现有配置，再按当前版本的配置文档启用；不要覆盖无关配置。
+插件停用或卸载后，Codex 不再加载该插件的 Hook；这不会删除用户主动配置的其他 Hook，也不会删除 Keychain 中的 Bark Key 或机器标签配置。
 
 ## 审核并信任 Hook
 
@@ -154,9 +127,9 @@ Hook 定义或脚本发生变化后，可能需要重新审核；不要使用绕
 先只验证发送器，不访问钥匙串或 Bark：
 
 ```bash
-SKILL_HOME="${CODEX_HOME:-$HOME/.codex}/skills/bark-notifications"
-printf '%s' 'Bark Hook dry-run' | \
-  "$SKILL_HOME/bin/bark-task-complete" turn_stopped --dry-run
+PLUGIN_ROOT="<插件安装根目录>"
+printf '%s' 'Codex' | \
+  "/usr/bin/python3" "$PLUGIN_ROOT/skills/bark-notifications/bin/bark-task-complete" turn_stopped --dry-run
 ```
 
 预期输出类似：
@@ -168,13 +141,13 @@ status=dry-run event=turn_stopped sent=false
 再验证 Stop Hook 的去重路径。下面的测试使用临时状态目录，不发送真实通知：
 
 ```bash
-SKILL_HOME="${CODEX_HOME:-$HOME/.codex}/skills/bark-notifications"
 TEST_STATE_DIR="$(mktemp -d)"
 printf '%s' '{"hook_event_name":"Stop","session_id":"dry-run-session","turn_id":"dry-run-turn","stop_hook_active":false}' | \
   CODEX_THREAD_ID="dry-run-session" \
   CODEX_BARK_HOOK_DRY_RUN=1 \
+  PLUGIN_DATA="$TEST_STATE_DIR/plugin-data" \
   CODEX_BARK_HOOK_STATE_DIR="$TEST_STATE_DIR" \
-  /usr/bin/python3 "$SKILL_HOME/bin/bark-stop-hook"
+  /usr/bin/python3 "$PLUGIN_ROOT/skills/bark-notifications/bin/bark-stop-hook"
 ```
 
 预期 Hook 输出为 `{}`，并且临时目录中只出现一个去重文件。相同 `session_id + turn_id` 再运行一次，不应新增文件。
@@ -186,7 +159,7 @@ printf '%s' '{"hook_event_name":"Stop","session_id":"internal-session","turn_id"
   CODEX_THREAD_ID="dry-run-session" \
   CODEX_BARK_HOOK_DRY_RUN=1 \
   CODEX_BARK_HOOK_STATE_DIR="$TEST_STATE_DIR" \
-  /usr/bin/python3 "$SKILL_HOME/bin/bark-stop-hook"
+  /usr/bin/python3 "$PLUGIN_ROOT/skills/bark-notifications/bin/bark-stop-hook"
 ```
 
 预期仍输出 `{}`，临时目录中的去重文件数量不变，表示内部临时 turn 没有进入通知链路。测试兼容回退时，可通过 `env -u CODEX_THREAD_ID` 执行原有 Dry-run；此时有效 Stop 事件仍按 `session_id + turn_id` 去重和通知。
@@ -210,7 +183,7 @@ HTTP 200 只表示 Bark 接受了请求，不代表 APNs 一定已经在手机�
 | 有状态消息但没有 Bark | `bark-task-complete` 的 dry-run、钥匙串 service/account、网络和 Bark API 状态 |
 | `credential-unavailable` | 本机没有正确保存 `codex-bark-notifications` / `codex` 项目 |
 | 同一用户回合收到多次 | 先确认本机安装版包含 `CODEX_THREAD_ID` 主线程过滤，再检查是否同时配置了用户级和项目级相同 Stop Hook |
-| 标题显示 `Codex` | 当前 Thread 没有设置名称，或 Hook 无法启动 App Server / 查询 `thread/read`；通知正文仍会正常发送 |
+| 标题显示 `Codex` | 这是固定标题；通知正文仍为“本轮回复已结束” |
 | 通知没有声音或不显示 | `level`、Bark sound、iOS 通知权限、Focus 模式和 Bark 历史记录 |
 
-通知失败不会阻止 Codex 本轮回复，也不会自动重试。会话名称查询失败时仍会发送通知，只把标题回退为 `Codex`；查询不会读取或发送对话正文。需要修改发送参数时，只修改 Skill 源码中的发送入口，再重新同步本机安装版本。
+通知失败不会阻止 Codex 本轮回复，也不会自动重试。通知不读取或发送对话正文。需要修改发送参数时，只修改插件源码中的发送入口，再重新安装或刷新插件。

@@ -1,0 +1,16 @@
+{
+  "hooks": {
+    "Stop": [
+      {
+        "hooks": [
+          {
+            "type": "command",
+            "command": "/usr/bin/python3 \"${PLUGIN_ROOT}/skills/bark-notifications/bin/bark-stop-hook\"",
+            "timeout": 30,
+            "statusMessage": "Sending Bark turn notification"
+          }
+        ]
+      }
+    ]
+  }
+}

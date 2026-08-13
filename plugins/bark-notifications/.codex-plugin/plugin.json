@@ -1,0 +1,31 @@
+{
+  "name": "bark-notifications",
+  "version": "0.2.0+codex.20260813070013",
+  "description": "Send a fixed Bark notification after each completed Codex turn.",
+  "author": {
+    "name": "czm233",
+    "url": "https://github.com/czm233"
+  },
+  "repository": "https://github.com/czm233/my-codex-skills",
+  "license": "MIT",
+  "keywords": [
+    "bark",
+    "notifications",
+    "codex",
+    "hooks"
+  ],
+  "skills": "./skills/",
+  "interface": {
+    "displayName": "Bark Notifications",
+    "shortDescription": "Notify Bark after each Codex turn.",
+    "longDescription": "Bundles a Codex Stop Hook and a Bark skill without modifying user-level hooks.json.",
+    "developerName": "czm233",
+    "category": "Productivity",
+    "capabilities": [
+      "Notifications"
+    ],
+    "defaultPrompt": [
+      "Configure Bark Notifications for this computer."
+    ]
+  }
+}

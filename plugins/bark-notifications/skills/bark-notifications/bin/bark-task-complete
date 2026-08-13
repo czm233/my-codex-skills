@@ -16,13 +16,11 @@ BARK_KEYCHAIN_SERVICE = "codex-bark-notifications"
 BARK_KEYCHAIN_ACCOUNT = "codex"
 BARK_ENDPOINT = "https://api.day.app/push"
 BARK_GROUP_PREFIX = "codex-task-status"
-DEFAULT_TITLE = "Codex 任务"
+FIXED_TITLE = "Codex"
 DEFAULT_MACHINE_LABEL = "Mac"
 MACHINE_CONFIG_FILENAME = "bark-notifications.json"
 MACHINE_LABEL_ENV = "CODEX_BARK_MACHINE_LABEL"
 MAX_MACHINE_LABEL_CHARS = 24
-MAX_TITLE_CHARS = 120
-MAX_TITLE_INPUT_CHARS = 4096
 EVENT_BODIES = {
     "turn_stopped": "本轮回复已结束",
 }
@@ -127,24 +125,6 @@ def parse_arguments() -> tuple[str, bool] | None:
     return event_names[0], dry_run
 
 
-def normalize_title(raw_title: str, max_chars: int = MAX_TITLE_CHARS) -> str:
-    safe_characters: list[str] = []
-    for character in raw_title:
-        if character in "\r\n\t" or unicodedata.category(character).startswith("C"):
-            safe_characters.append(" ")
-        else:
-            safe_characters.append(character)
-
-    normalized = " ".join("".join(safe_characters).split())
-    return normalized[:max_chars] or DEFAULT_TITLE
-
-
-def format_notification_title(raw_title: str, machine_label: str) -> str:
-    prefix = f"[{machine_label}] "
-    available_title_chars = max(1, MAX_TITLE_CHARS - len(prefix))
-    return prefix + normalize_title(raw_title, available_title_chars)
-
-
 def format_notification_group(machine_label: str) -> str:
     return f"{BARK_GROUP_PREFIX}:{machine_label}"[:64]
 
@@ -157,9 +137,9 @@ def main() -> int:
 
     event_name, dry_run = parsed_arguments
     machine_label = resolve_machine_label()
-    title = format_notification_title(
-        sys.stdin.read(MAX_TITLE_INPUT_CHARS), machine_label
-    )
+    # The lifecycle contract permits only a fixed, non-sensitive title/body.
+    # Machine identity stays in the Bark group and never enters notification text.
+    title = FIXED_TITLE
 
     if dry_run:
         emit(f"status=dry-run event={event_name} sent=false")

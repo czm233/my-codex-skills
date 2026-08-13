@@ -1,0 +1,20 @@
+{
+  "name": "my-codex-skills",
+  "interface": {
+    "displayName": "My Codex Skills"
+  },
+  "plugins": [
+    {
+      "name": "bark-notifications",
+      "source": {
+        "source": "local",
+        "path": "./plugins/bark-notifications"
+      },
+      "policy": {
+        "installation": "AVAILABLE",
+        "authentication": "ON_INSTALL"
+      },
+      "category": "Productivity"
+    }
+  ]
+}

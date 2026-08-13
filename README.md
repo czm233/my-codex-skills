@@ -1,15 +1,16 @@
 # my-codex-skills
 
-用于集中版本控制、持续改进并在多台电脑之间同步个人 Codex Skills。
+用于集中版本控制、持续改进并在多台电脑之间同步个人 Codex Skills 和插件。
 
 ## 仓库结构
 
 ```text
 my-codex-skills/
-├── skills/                 # 正式技能；每个子目录都是一个独立 Skill
+├── plugins/                # 可安装插件；Bark 的 Skill 与生命周期 Hook 打包在这里
+│   └── bark-notifications/
+├── skills/                 # 独立技能；每个子目录都是一个独立 Skill
 │   ├── before-dev/         # 开发前分析需求、对比方案并等待审批
 │   ├── after-dev/          # 开发完成后复盘实际改动和验证结果
-│   ├── bark-notifications/ # 发送和排查 Bark iOS 推送通知
 │   ├── reflect/            # 从纠错中提炼候选规则，经审核后写入项目记忆
 │   └── simple/             # 把复杂内容解释清楚并生成配套图表
 └── templates/
@@ -22,7 +23,7 @@ my-codex-skills/
 |---|---|---|
 | `before-dev` | 所有开发需求实施前分析问题或目标、对比方案并等待用户审批 | `skills/before-dev` |
 | `after-dev` | 开发完成后依据实际差异复盘工作，对比修改前后、流程变化和验证结果 | `skills/after-dev` |
-| `bark-notifications` | 发送、集成、测试和排查 Bark iOS 推送通知 | `skills/bark-notifications` |
+| `bark-notifications` | Bark 通知 Skill + 插件 Stop Hook | `plugins/bark-notifications` |
 | `reflect` | 复盘人类纠正过程，提炼有边界的候选规则，经审核后写入项目 `AGENTS.md` | `skills/reflect` |
 | `simple` | 用易懂中文、流程图、时序图和对照表解释复杂内容 | `skills/simple` |
 
@@ -43,13 +44,14 @@ cp -R templates/skill-template skills/my-new-skill
 
 ## 在当前电脑安装
 
-使用 Codex 内置的 `$skill-installer`，按需安装指定 Skill。例如：
+使用 Codex 的插件市场安装 `bark-notifications`。它会同时安装 Skill 和插件级 Stop Hook，不需要手动编辑 `~/.codex/hooks.json`。
+
+独立 Skills 仍使用 Codex 内置的 `$skill-installer`，按需安装指定 Skill。例如：
 
 ```text
 使用 $skill-installer 从 czm233/my-codex-skills 安装：
 skills/before-dev
 skills/after-dev
-skills/bark-notifications
 skills/reflect
 skills/simple
 ```
@@ -64,7 +66,7 @@ skills/skill-two
 
 ## 在其他电脑同步
 
-在目标电脑登录有权访问该仓库的 GitHub 账号，然后通过 `$skill-installer` 安装需要的 Skill。
+在目标电脑登录有权访问该仓库的 GitHub 账号，然后安装用户级 `bark-notifications` 插件；其他独立 Skill 仍通过 `$skill-installer` 安装。
 
 `$skill-installer` 默认不会覆盖已存在的同名 Skill。需要更新时，让 Codex 删除本机旧版本并从仓库重新安装指定 Skill：
 

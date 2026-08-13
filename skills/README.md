@@ -1,6 +1,6 @@
 # Skills
 
-此目录只存放正式使用的个人 Skills。
+此目录只存放不依赖插件生命周期的正式个人 Skills。带有生命周期 Hook 的能力放在仓库根目录 `plugins/`。
 
 每个一级子目录都是一个独立技能，至少包含一个带 YAML frontmatter 的 `SKILL.md`：
 
@@ -21,6 +21,6 @@ skills/
 |---|---|
 | `before-dev/` | 所有开发需求实施前分析问题或目标、对比方案并等待用户审批 |
 | `after-dev/` | 开发完成后依据实际差异复盘工作、前后变化、流程变化和验证结果 |
-| `bark-notifications/` | 发送、集成、测试和排查 Bark iOS 推送通知 |
+| `bark-notifications` | 已迁移到 `plugins/bark-notifications/`，由插件同时管理 Skill 和 Stop Hook |
 | `reflect/` | 从用户纠错中提炼有边界的候选规则，经审核后再写入项目 `AGENTS.md` |
 | `simple/` | 将复杂说明转成易懂中文，并提供流程图、时序图和对照表 |
