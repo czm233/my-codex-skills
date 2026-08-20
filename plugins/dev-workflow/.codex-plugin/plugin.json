@@ -1,0 +1,31 @@
+{
+  "name": "dev-workflow",
+  "version": "0.1.0",
+  "description": "Development workflow for proposal approval, implementation review, verification, and user acceptance.",
+  "author": {
+    "name": "czm233",
+    "url": "https://github.com/czm233"
+  },
+  "repository": "https://github.com/czm233/my-codex-skills",
+  "license": "MIT",
+  "keywords": [
+    "development-workflow",
+    "approval",
+    "review",
+    "verification"
+  ],
+  "skills": "./skills/",
+  "interface": {
+    "displayName": "Dev Workflow",
+    "shortDescription": "开发前审批与开发后复盘验收",
+    "longDescription": "提供 before-dev 和 after-dev 两个独立 Skill：开发前分析问题、对比方案并等待审批，开发后根据真实差异输出验证证据和用户验收说明。",
+    "developerName": "czm233",
+    "category": "Productivity",
+    "capabilities": [
+      "Development workflow"
+    ],
+    "defaultPrompt": [
+      "使用 Dev Workflow 管理一次开发需求。"
+    ]
+  }
+}

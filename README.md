@@ -6,11 +6,16 @@
 
 ```text
 my-codex-skills/
-├── plugins/                # 可安装插件；Bark 的 Skill 与生命周期 Hook 打包在这里
-│   └── bark-notifications/
-├── skills/                 # 独立技能；每个子目录都是一个独立 Skill
-│   ├── before-dev/         # 开发前分析需求、对比方案并等待审批
-│   ├── after-dev/          # 开发完成后复盘实际改动和验证结果
+├── plugins/                # 可安装插件
+│   ├── bark-notifications/ # Bark Skill + 生命周期 Hook
+│   └── dev-workflow/       # 开发前后工作流插件
+│       ├── .codex-plugin/plugin.json
+│       └── skills/
+│           ├── before-dev/ # 开发前分析需求、对比方案并等待审批
+│           └── after-dev/  # 开发完成后复盘改动、验证和用户验收
+├── skills/                 # Skill 源码；包含插件 Skill 的仓库保留副本
+│   ├── before-dev/         # dev-workflow 插件的仓库源副本
+│   ├── after-dev/          # dev-workflow 插件的仓库源副本
 │   ├── reflect/            # 从纠错中提炼候选规则，经审核后写入项目记忆
 │   └── simple/             # 把复杂内容解释清楚并生成配套图表
 └── templates/
@@ -21,11 +26,12 @@ my-codex-skills/
 
 | Skill | 用途 | 安装路径 |
 |---|---|---|
-| `before-dev` | 所有开发需求实施前分析问题或目标、对比方案并等待用户审批 | `skills/before-dev` |
-| `after-dev` | 开发完成后依据实际差异复盘工作，对比修改前后、流程变化和验证结果 | `skills/after-dev` |
+| `dev-workflow` | 包含 `before-dev` 和 `after-dev` 两个独立 Skill，管理开发前审批与开发后复盘验收 | `plugins/dev-workflow` |
 | `bark-notifications` | Bark 通知 Skill + 插件 Stop Hook | `plugins/bark-notifications` |
 | `reflect` | 复盘人类纠正过程，提炼有边界的候选规则，经审核后写入项目 `AGENTS.md` | `skills/reflect` |
 | `simple` | 用易懂中文、流程图、时序图和对照表解释复杂内容 | `skills/simple` |
+
+`before-dev` 和 `after-dev` 的仓库源目录保留用于版本追踪；本机不单独安装这两个副本，实际运行使用 `plugins/dev-workflow` 插件内的版本。
 
 ## 开发协作工作流
 
@@ -44,38 +50,33 @@ cp -R templates/skill-template skills/my-new-skill
 
 ## 在当前电脑安装
 
-使用 Codex 的插件市场安装 `bark-notifications`。它会同时安装 Skill 和插件级 Stop Hook，不需要手动编辑 `~/.codex/hooks.json`。
+使用 Codex 的插件市场安装 `bark-notifications` 和 `dev-workflow`。`bark-notifications` 会同时安装 Skill 和插件级 Stop Hook；`dev-workflow` 会安装 `before-dev` 与 `after-dev` 两个独立 Skill。
 
 迁移或更新后请重启 Codex Desktop，并重新打开需要使用通知的会话；旧的 CLI/app-server 会话可能仍在内存中缓存已删除的旧 Hook 路径。
 
-独立 Skills 仍使用 Codex 内置的 `$skill-installer`，按需安装指定 Skill。例如：
+仍需单独安装的 Skill 使用 Codex 内置的 `$skill-installer`，按需安装指定 Skill。例如：
 
 ```text
-使用 $skill-installer 从 czm233/my-codex-skills 安装：
-skills/before-dev
-skills/after-dev
 skills/reflect
 skills/simple
 ```
 
-也可以一次指定多个 Skill：
+安装工作流插件时，使用仓库 marketplace：
 
-```text
-使用 $skill-installer 从 czm233/my-codex-skills 安装：
-skills/skill-one
-skills/skill-two
+```bash
+codex plugin marketplace add czm233/my-codex-skills
+codex plugin add dev-workflow@my-codex-skills
 ```
 
 ## 在其他电脑同步
 
-在目标电脑登录有权访问该仓库的 GitHub 账号，然后安装用户级 `bark-notifications` 插件；其他独立 Skill 仍通过 `$skill-installer` 安装。
+在目标电脑登录有权访问该仓库的 GitHub 账号，然后安装 `bark-notifications` 和 `dev-workflow` 插件；`reflect`、`simple` 等独立 Skill 仍通过 `$skill-installer` 安装。
 
-`$skill-installer` 默认不会覆盖已存在的同名 Skill。需要更新时，让 Codex 删除本机旧版本并从仓库重新安装指定 Skill：
+插件更新时，刷新 marketplace 并重新安装对应插件；本机不要同时安装同名的独立 Skill 副本和插件内 Skill 副本。
 
-```text
-使用 $skill-installer 重新安装 czm233/my-codex-skills 中的：
-skills/before-dev
-skills/after-dev
+```bash
+codex plugin marketplace upgrade my-codex-skills
+codex plugin add dev-workflow@my-codex-skills
 ```
 
 ## 安全约定
@@ -86,7 +87,8 @@ skills/after-dev
 
 ## 推荐迭代流程
 
-1. 在独立技能目录中修改并本机验证。
+1. 在插件目录中修改并本机验证。
 2. 检查 Git diff，确认没有凭证和本机敏感配置。
-3. 提交并推送到 GitHub。
-4. 其他电脑拉取最新版本。
+3. 更新插件版本并验证 marketplace 条目。
+4. 经授权后提交并推送到 GitHub。
+5. 其他电脑刷新 marketplace，重新安装对应插件并在新任务中验证。
