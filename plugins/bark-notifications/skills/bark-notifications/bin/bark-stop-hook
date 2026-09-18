@@ -206,6 +206,23 @@ def _read_thread_title(thread_id: str, cwd: object) -> str | None:
         _terminate_process(process)
 
 
+def _transcript_turn_identity(transcript_path: str) -> str:
+    """Derive a per-turn identity from transcript file metadata only.
+
+    ZCode-style Stop events carry a transcript path instead of Codex's turn
+    id. Each completed turn appends to the transcript, so path, mtime and
+    size identify one turn without ever reading the file content.
+    """
+
+    if not transcript_path:
+        return ""
+    try:
+        stat_result = os.stat(transcript_path)
+    except OSError:
+        return ""
+    return f"{transcript_path}:{stat_result.st_mtime_ns}:{stat_result.st_size}"
+
+
 def _resolve_session_title(event: dict[str, Any]) -> str:
     for field in ("thread_name", "threadName", "session_name", "sessionName"):
         title = _normalize_session_title(event.get(field))
@@ -232,7 +249,14 @@ def main() -> int:
         emit({})
         return 0
 
-    if not isinstance(event, dict) or event.get("hook_event_name") != "Stop":
+    if not isinstance(event, dict):
+        emit({})
+        return 0
+
+    # The Stop payload may omit hook_event_name on surfaces such as ZCode;
+    # only reject an explicit mismatch.
+    hook_event_name = event.get("hook_event_name")
+    if hook_event_name is not None and hook_event_name != "Stop":
         emit({})
         return 0
 
@@ -243,9 +267,18 @@ def main() -> int:
 
     session_id = str(event.get("session_id") or "")
     turn_id = str(event.get("turn_id") or "")
-    if not session_id or not turn_id:
+    transcript_path = str(event.get("transcript_path") or "")
+    session_identity = session_id or _current_thread_id() or (
+        f"transcript:{transcript_path}" if transcript_path else ""
+    )
+    if not session_identity:
         emit({})
         return 0
+
+    turn_identity = turn_id or _transcript_turn_identity(transcript_path)
+    if not turn_identity:
+        # Last resort: dedupe only immediate double-fires of the same stop.
+        turn_identity = f"t{int(time.time())}"
 
     # Codex Desktop can run ephemeral model turns for UI-only features such as
     # ambient suggestions. Those turns inherit the visible thread id through
@@ -257,7 +290,9 @@ def main() -> int:
         emit({})
         return 0
 
-    dedupe_id = hashlib.sha256(f"{session_id}\0{turn_id}".encode()).hexdigest()
+    dedupe_id = hashlib.sha256(
+        f"{session_identity}\0{turn_identity}".encode()
+    ).hexdigest()
     state_dir = pathlib.Path(
         os.environ.get("CODEX_BARK_HOOK_STATE_DIR", str(DEFAULT_STATE_DIR))
     )

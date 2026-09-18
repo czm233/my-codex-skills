@@ -231,6 +231,79 @@ class BarkPluginTests(unittest.TestCase):
                 "{}",
             )
 
+    def test_stop_hook_accepts_zcode_style_event_without_turn_id(self) -> None:
+        stop_hook = load_module("bark_stop_hook_zcode_test", BIN_ROOT / "bark-stop-hook")
+
+        def invoke(event: dict[str, object], env: dict[str, str]) -> str:
+            output = io.StringIO()
+            with (
+                mock.patch.dict(os.environ, env, clear=False),
+                mock.patch.object(
+                    stop_hook.sys,
+                    "stdin",
+                    io.StringIO(json.dumps(event, ensure_ascii=False)),
+                ),
+                contextlib.redirect_stdout(output),
+            ):
+                self.assertEqual(stop_hook.main(), 0)
+            return output.getvalue()
+
+        with tempfile.TemporaryDirectory(prefix="bark-stop-hook-zcode-test-") as temp_dir:
+            root = Path(temp_dir)
+            captured_title = root / "captured-title.txt"
+            fake_sender = root / "fake-sender.py"
+            fake_sender.write_text(
+                "#!/usr/bin/env python3\n"
+                "import os, pathlib, sys\n"
+                "pathlib.Path(os.environ['CAPTURED_TITLE']).write_text(sys.stdin.read(), encoding='utf-8')\n",
+                encoding="utf-8",
+            )
+            fake_sender.chmod(0o700)
+            transcript = root / "transcript.jsonl"
+            transcript.write_text("{}\n", encoding="utf-8")
+            stop_hook.BARK_COMMAND = fake_sender
+
+            # A ZCode-style Stop event omits hook_event_name and turn_id and
+            # identifies the session through the transcript path.
+            event = {
+                "session_id": "zcode-session",
+                "transcript_path": str(transcript),
+                "cwd": str(root),
+                "stop_hook_active": False,
+            }
+            env = {
+                "CODEX_BARK_HOOK_CODEX_COMMAND": str(root / "missing-codex"),
+                "CODEX_BARK_HOOK_STATE_DIR": str(root / "state"),
+                "CAPTURED_TITLE": str(captured_title),
+            }
+
+            self.assertEqual(invoke(event, env), "{}")
+            self.assertEqual(captured_title.read_text(encoding="utf-8"), "本轮回复已结束")
+            markers = list((root / "state").glob("*.sent"))
+            self.assertEqual(len(markers), 1)
+
+            # The same turn (identical transcript metadata) is deduplicated.
+            self.assertEqual(invoke(event, env), "{}")
+            self.assertEqual(len(list((root / "state").glob("*.sent"))), 1)
+
+            # The next turn appends to the transcript, producing a new identity.
+            with transcript.open("a", encoding="utf-8") as transcript_file:
+                transcript_file.write("{}\n")
+            self.assertEqual(invoke(event, env), "{}")
+            self.assertEqual(len(list((root / "state").glob("*.sent"))), 2)
+
+            # A session id is not required when a transcript path exists.
+            self.assertEqual(
+                invoke({**event, "session_id": ""}, env), "{}"
+            )
+            self.assertEqual(len(list((root / "state").glob("*.sent"))), 3)
+
+            # An explicit non-Stop event name is still rejected.
+            self.assertEqual(
+                invoke({**event, "hook_event_name": "SubagentStop"}, env), "{}"
+            )
+            self.assertEqual(len(list((root / "state").glob("*.sent"))), 3)
+
 
 if __name__ == "__main__":
     unittest.main()
