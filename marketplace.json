@@ -1,0 +1,37 @@
+{
+  "name": "my-codex-skills",
+  "description": "czm233 的个人 Skills/插件市场：开发工作流（before-dev/after-dev）与 Bark 通知。本文件为 ZCode 兼容清单；Codex 入口清单仍在 .agents/plugins/marketplace.json。",
+  "plugins": [
+    {
+      "name": "bark-notifications",
+      "source": "plugins/bark-notifications",
+      "description": "Send a Bark notification with the local machine label and the current session title after each completed turn (Codex Stop hook; in ZCode only the skill is loaded).",
+      "version": "0.2.0",
+      "author": {
+        "name": "czm233"
+      },
+      "category": "productivity",
+      "keywords": [
+        "bark",
+        "notifications",
+        "hooks"
+      ]
+    },
+    {
+      "name": "dev-workflow",
+      "source": "plugins/dev-workflow",
+      "description": "Development workflow for proposal approval, implementation review, verification, and user acceptance.",
+      "version": "0.1.0",
+      "author": {
+        "name": "czm233"
+      },
+      "category": "productivity",
+      "keywords": [
+        "development-workflow",
+        "approval",
+        "review",
+        "verification"
+      ]
+    }
+  ]
+}
