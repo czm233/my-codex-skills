@@ -11,7 +11,7 @@
 - `bin/bark-task-complete`：解析本机机器标签，从 macOS 钥匙串读取 Bark Device Key，通过 Bark `/push` 接口发送机器标签和经过清洗的 Session 标题。
 - `bin/bark-configure-machine`：写入或显示本机非敏感机器标签，不读取或处理 Bark Key。
 
-插件 Hook 通过 `${PLUGIN_ROOT}` 调用 Skill 内脚本。不要手动编辑 `~/.codex/hooks.json`，也不要在 `~/.codex/bin` 再复制一份 Bark 发送脚本。
+插件 Hook 通过运行时的插件根模板变量调用 Skill 内脚本：ZCode 使用 `${CLAUDE_PLUGIN_ROOT}`（或 `${ZCODE_PLUGIN_ROOT}`），Codex 使用 `${PLUGIN_ROOT}`。仓库自带的 `hooks/hooks.json` 写的是 ZCode 变量；在 Codex 上安装时需把它替换为 `${PLUGIN_ROOT}`。不要手动编辑 `~/.codex/hooks.json`，也不要在 `~/.codex/bin` 再复制一份 Bark 发送脚本。
 
 ## 安装用户级插件
 
@@ -34,7 +34,7 @@ codex plugin add bark-notifications@my-codex-skills
 
 如果本机还残留旧的 Bark Skill 或用户级 Bark Hook，应先按迁移清单精确删除旧项；不要覆盖其他 Hook。
 
-完成迁移后必须重启 Codex Desktop，或结束并重新启动对应的 Codex CLI/app-server 会话。Codex 会在会话启动时加载 Hook；已经运行的旧会话可能仍在内存中保留旧 `hooks.json`，即使磁盘上的旧文件已经删除，也会继续尝试执行旧路径并报“文件不存在”。重启后用 `/hooks` 确认 Stop Hook 的来源显示为 `bark-notifications@my-codex-skills`，命令路径包含 `${PLUGIN_ROOT}`；不要为了消除旧报错重新创建旧用户级 Hook。
+完成迁移后必须重启 Codex Desktop，或结束并重新启动对应的 Codex CLI/app-server 会话。Codex 会在会话启动时加载 Hook；已经运行的旧会话可能仍在内存中保留旧 `hooks.json`，即使磁盘上的旧文件已经删除，也会继续尝试执行旧路径并报“文件不存在”。重启后用 `/hooks` 确认 Stop Hook 的来源显示为 `bark-notifications@my-codex-skills`，命令路径包含当前运行时的插件根变量（Codex 为 `${PLUGIN_ROOT}`，ZCode 为 `${CLAUDE_PLUGIN_ROOT}`）；不要为了消除旧报错重新创建旧用户级 Hook。
 
 ## 在本机保存 Bark Key
 
@@ -109,7 +109,9 @@ skill维护-bark-notifications
 
 ## 插件 Hook 生命周期
 
-不需要合并或编辑用户级 `hooks.json`。Codex 从已启用插件中加载 `hooks/hooks.json`，命令使用 `${PLUGIN_ROOT}` 定位插件内脚本。插件 Hook 与用户级、项目级 Hook 共同加载；如果另一层仍配置旧 Bark Hook，会造成重复通知，因此迁移时要删除旧 Bark Hook。
+不需要合并或编辑用户级 `hooks.json`。Codex 从已启用插件中加载 `hooks/hooks.json`，命令使用插件根模板变量定位插件内脚本（Codex 为 `${PLUGIN_ROOT}`，ZCode 为 `${CLAUDE_PLUGIN_ROOT}`，仓库自带文件使用后者）。插件 Hook 与用户级、项目级 Hook 共同加载；如果另一层仍配置旧 Bark Hook，会造成重复通知，因此迁移时要删除旧 Bark Hook。
+
+ZCode 与 Codex 的差异：ZCode 通过插件清单自动发现 `hooks/hooks.json`，无需 `/hooks` 信任审核，可在 Settings → Plugin Management 的插件详情中查看 Hook 是否可运行；Hook 的触发、超时与失败记录在 ZCode 日志中。ZCode 支持的事件名恰为 `SessionStart`、`UserPromptSubmit`、`PreToolUse`、`PermissionRequest`、`PostToolUse`、`PostToolUseFailure`、`Stop` 七种，本插件的 `Stop` Hook 无需改动即可被 ZCode 加载。
 
 插件停用或卸载后，Codex 不再加载该插件的 Hook；这不会删除用户主动配置的其他 Hook，也不会删除 Keychain 中的 Bark Key 或机器标签配置。
 
@@ -182,6 +184,7 @@ HTTP 200 只表示 Bark 接受了请求，不代表 APNs 一定已经在手机�
 | 现象 | 检查方向 |
 | --- | --- |
 | 仍看到旧 `/Users/.../.codex/skills/bark-notifications/...` 报错 | 结束迁移前启动的 Codex Desktop/app-server 或 CLI 会话并重新启动；不要恢复旧 `hooks.json` |
+| 报错路径形如 `/skills/bark-notifications/bin/bark-stop-hook`（缺少前缀） | Hook 命令里的插件根变量没有被运行时展开（展开为空）。ZCode 需使用 `${CLAUDE_PLUGIN_ROOT}`，Codex 需使用 `${PLUGIN_ROOT}`；核对 `hooks/hooks.json` 与当前运行时是否匹配 |
 | 看不到 Hook 状态消息 | `hooks.json` 层级、Hook 功能开关、JSON 语法、Codex 重启和 `/hooks` 信任状态 |
 | 有状态消息但没有 Bark | `bark-task-complete` 的 dry-run、钥匙串 service/account、网络和 Bark API 状态 |
 | `credential-unavailable` | 本机没有正确保存 `codex-bark-notifications` / `codex` 项目 |

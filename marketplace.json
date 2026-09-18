@@ -5,7 +5,7 @@
     {
       "name": "bark-notifications",
       "source": "plugins/bark-notifications",
-      "description": "Send a Bark notification with the local machine label and the current session title after each completed turn (Codex Stop hook; in ZCode only the skill is loaded).",
+      "description": "Send a Bark notification with the local machine label and the current session title after each completed turn (bundled Stop hook for ZCode and Codex).",
       "version": "0.2.0",
       "author": {
         "name": "czm233"
