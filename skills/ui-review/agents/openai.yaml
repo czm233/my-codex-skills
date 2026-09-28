@@ -1,0 +1,4 @@
+interface:
+  display_name: "UI Review"
+  short_description: "检查跨平台 UI 可用性并评分，持续记录真实问题和已验证解决办法"
+  default_prompt: "$ui-review"

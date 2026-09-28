@@ -24,3 +24,4 @@ skills/
 | `bark-notifications` | 已迁移到 `plugins/bark-notifications/`，由插件同时管理 Skill 和 Stop Hook |
 | `reflect/` | 从用户纠错中提炼有边界的候选规则，经审核后再写入项目 `AGENTS.md` |
 | `simple/` | 将复杂说明转成易懂中文，并提供流程图、时序图和对照表 |
+| `ui-review/` | `$ui-review` 默认检查并出报告；`$ui-review 记录` 增量维护 UI 规则 |

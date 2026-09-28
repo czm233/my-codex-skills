@@ -28,6 +28,7 @@ my-codex-skills/
 |---|---|---|
 | `dev-workflow` | 包含 `before-dev` 和 `after-dev` 两个独立 Skill，管理开发前审批与开发后复盘验收 | `plugins/dev-workflow` |
 | `bark-notifications` | Bark 通知 Skill + 插件 Stop Hook | `plugins/bark-notifications` |
+| `ui-review` | 跨平台 UI 客观可用性体检、评分，以及真实问题与解决办法的增量记录 | `skills/ui-review` |
 | `reflect` | 复盘人类纠正过程，提炼有边界的候选规则，经审核后写入项目 `AGENTS.md` | `skills/reflect` |
 | `simple` | 用易懂中文、流程图、时序图和对照表解释复杂内容 | `skills/simple` |
 
@@ -92,3 +93,24 @@ codex plugin add dev-workflow@my-codex-skills
 3. 更新插件版本并验证 marketplace 条目。
 4. 经授权后提交并推送到 GitHub。
 5. 其他电脑刷新 marketplace，重新安装对应插件并在新任务中验证。
+
+## UI Review
+
+- `$ui-review`：检查当前业务项目，识别实际技术，逐项验证并输出得分、覆盖率和报告，不修复代码。
+- `$ui-review 记录`：提取刚才的 UI 问题与解决办法，去重后更新源码规则库。
+
+源码统一维护在本仓库 `skills/ui-review`。需要记录的设备可将本机仓库根目录设置为环境变量 `UI_REVIEW_REPO`，或在调用时指定仓库路径；只检查的设备无需克隆维护仓库。不要直接编辑安装副本，记录后按本仓库约定同步、验证和发布。初始通用基线与个人组件复用偏好明确分开，真实案例逐步累积。
+
+发布后可以用 Skills CLI 全局安装到 Codex：
+
+```bash
+npx skills add czm233/my-codex-skills --skill ui-review -g -a codex
+```
+
+以后通过该工具安装的版本可更新：
+
+```bash
+npx skills update ui-review -g
+```
+
+首次从手工安装迁移时先比较已有同名安装目录，保留独立修改，避免重复安装；手工复制的旧版本不能假定已被 Skills CLI 登记。带 Hook 的插件继续走现有插件渠道。安装后在新对话中试用，安装与更新不负责把本地经验推送 GitHub。
