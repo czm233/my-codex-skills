@@ -71,6 +71,14 @@ def normalize_session_title(raw_title: object) -> str:
     return normalized[:MAX_SESSION_TITLE_CHARS] or DEFAULT_SESSION_TITLE
 
 
+def normalize_reply_preview(raw: object) -> str:
+    if not isinstance(raw, str):
+        return ""
+    safe = "".join(" " if unicodedata.category(c).startswith("C") else c for c in raw)
+    text = " ".join(safe.split()).strip()
+    return text[:30] + ("…" if len(text) > 30 else "")
+
+
 def _read_configured_machine_label() -> str | None:
     config_path = _codex_home() / MACHINE_CONFIG_FILENAME
     try:
@@ -82,6 +90,24 @@ def _read_configured_machine_label() -> str | None:
     if not isinstance(config, dict):
         return None
     return normalize_machine_label(config.get("machine_label"))
+
+
+def resolve_sound() -> str:
+    """Use a local ringtone name, retaining bell for absent or invalid config."""
+    config_path = _codex_home() / MACHINE_CONFIG_FILENAME
+    try:
+        config = json.loads(config_path.read_text(encoding="utf-8"))
+    except (OSError, ValueError, TypeError):
+        return "bell"
+    sound = config.get("sound") if isinstance(config, dict) else None
+    if (
+        not isinstance(sound, str)
+        or not sound.strip()
+        or len(sound) > 120
+        or any(unicodedata.category(char).startswith("C") or char in "/\\" for char in sound)
+    ):
+        return "bell"
+    return sound.strip()
 
 
 def _read_command_text(command: list[str]) -> str | None:
@@ -154,8 +180,22 @@ def main() -> int:
 
     event_name, dry_run = parsed_arguments
     machine_label = resolve_machine_label()
-    title = machine_label
-    session_title = normalize_session_title(sys.stdin.read(MAX_SESSION_TITLE_INPUT_CHARS))
+    raw_input = sys.stdin.read(MAX_SESSION_TITLE_INPUT_CHARS)
+    try:
+        notification = json.loads(raw_input)
+    except (ValueError, TypeError):
+        notification = None
+    if isinstance(notification, dict):
+        session_title = normalize_session_title(notification.get("session_title"))
+        title = f"{session_title} · {machine_label}"
+        body = normalize_reply_preview(notification.get("reply_preview"))
+        if not body:
+            emit("status=skipped category=missing-reply-preview")
+            return 0
+    else:
+        # Preserve compatibility for explicit legacy standalone calls.
+        title = machine_label
+        body = normalize_session_title(raw_input)
 
     if dry_run:
         emit(f"status=dry-run event={event_name} sent=false")
@@ -197,9 +237,9 @@ def main() -> int:
         {
             "device_key": device_key,
             "title": title,
-            "body": session_title,
+            "body": body,
             "level": "active",
-            "sound": "bell",
+            "sound": resolve_sound(),
             "group": format_notification_group(machine_label),
         },
         ensure_ascii=False,

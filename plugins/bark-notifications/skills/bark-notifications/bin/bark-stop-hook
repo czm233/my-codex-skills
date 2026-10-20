@@ -4,6 +4,7 @@
 
 from __future__ import annotations
 
+import fcntl
 import hashlib
 import json
 import os
@@ -36,6 +37,40 @@ DEFAULT_STATE_DIR = pathlib.Path(
 
 def emit(payload: dict[str, object]) -> None:
     sys.stdout.write(json.dumps(payload, ensure_ascii=False))
+
+
+def _record_diagnostic(event: dict[str, Any], outcome: str, reason: str = "") -> None:
+    """Bounded local metadata log. Never persist raw identifiers or input text."""
+    state_dir = pathlib.Path(os.environ.get("CODEX_BARK_HOOK_STATE_DIR", str(DEFAULT_STATE_DIR)))
+    def fingerprint(value: object) -> str | None:
+        return hashlib.sha256(str(value).encode()).hexdigest()[:20] if value else None
+    current = _current_thread_id()
+    session = event.get("session_id")
+    record = {
+        "timestamp": time.strftime("%Y-%m-%dT%H:%M:%SZ", time.gmtime()),
+        "outcome": outcome,
+        "reason": reason,
+        "session_hash": fingerprint(session),
+        "current_thread_hash": fingerprint(current),
+        "turn_hash": fingerprint(event.get("turn_id")),
+        "thread_relation": ("unavailable" if not current else
+                            "missing_session" if not session else
+                            "match" if session == current else "mismatch"),
+        "dry_run": os.environ.get("CODEX_BARK_HOOK_DRY_RUN") == "1",
+    }
+    try:
+        state_dir.mkdir(mode=0o700, parents=True, exist_ok=True)
+        lock_fd = os.open(state_dir / "diagnostics.lock", os.O_CREAT | os.O_WRONLY, 0o600)
+        with os.fdopen(lock_fd, "w") as lock:
+            fcntl.flock(lock, fcntl.LOCK_EX)
+            path = state_dir / "diagnostics.jsonl"
+            if path.exists() and path.stat().st_size >= 1_048_576:
+                path.replace(state_dir / "diagnostics.jsonl.1")
+            fd = os.open(path, os.O_CREAT | os.O_APPEND | os.O_WRONLY, 0o600)
+            with os.fdopen(fd, "a", encoding="utf-8") as output:
+                output.write(json.dumps(record, ensure_ascii=True) + "\n")
+    except (OSError, ValueError):
+        pass  # Diagnostics must never affect Hook behavior.
 
 
 def _current_thread_id() -> str | None:
@@ -161,8 +196,11 @@ def _codex_command() -> str:
     return CODEX_COMMAND
 
 
-def _read_thread_title(thread_id: str, cwd: object) -> str | None:
+def _read_thread_title(thread_id: str, cwd: object, diagnostics: dict[str, str] | None = None) -> str | None:
     """Read only Thread metadata; never request turns or transcript items."""
+
+    if diagnostics is not None:
+        diagnostics["reason"] = "protocol_io_failed"
 
     try:
         process = subprocess.Popen(
@@ -173,6 +211,8 @@ def _read_thread_title(thread_id: str, cwd: object) -> str | None:
             stderr=subprocess.DEVNULL,
         )
     except (OSError, subprocess.SubprocessError):
+        if diagnostics is not None:
+            diagnostics["reason"] = "process_start_failed"
         return None
 
     try:
@@ -186,7 +226,12 @@ def _read_thread_title(thread_id: str, cwd: object) -> str | None:
         }
         if not _send_protocol_message(process, initialize):
             return None
-        if _read_protocol_response(process, 1, THREAD_READ_TIMEOUT) is None:
+        initialized = _read_protocol_response(process, 1, THREAD_READ_TIMEOUT)
+        if initialized is None or "error" in initialized:
+            if diagnostics is not None:
+                diagnostics["reason"] = ("initialize_error" if initialized else
+                                         "process_exited" if process.poll() is not None else
+                                         "initialize_no_response")
             return None
         if not _send_protocol_message(process, {"method": "initialized"}):
             return None
@@ -199,7 +244,14 @@ def _read_thread_title(thread_id: str, cwd: object) -> str | None:
         if not _send_protocol_message(process, thread_read):
             return None
         response = _read_protocol_response(process, 2, THREAD_READ_TIMEOUT)
-        return _extract_thread_title(response) if response else None
+        title = _extract_thread_title(response) if response else None
+        if diagnostics is not None:
+            diagnostics["reason"] = ("metadata_title" if title else
+                                     "process_exited" if response is None and process.poll() is not None else
+                                     "thread_read_no_response" if response is None else
+                                     "thread_read_error" if "error" in response else
+                                     "empty_or_invalid_title")
+        return title
     except (OSError, ValueError, subprocess.SubprocessError):
         return None
     finally:
@@ -223,10 +275,12 @@ def _transcript_turn_identity(transcript_path: str) -> str:
     return f"{transcript_path}:{stat_result.st_mtime_ns}:{stat_result.st_size}"
 
 
-def _resolve_session_title(event: dict[str, Any]) -> str:
+def _resolve_session_title(event: dict[str, Any], diagnostics: dict[str, str] | None = None) -> str | None:
     for field in ("thread_name", "threadName", "session_name", "sessionName"):
         title = _normalize_session_title(event.get(field))
         if title:
+            if diagnostics is not None:
+                diagnostics["reason"] = "event_title"
             return title
 
     thread_id = str(
@@ -237,9 +291,11 @@ def _resolve_session_title(event: dict[str, Any]) -> str:
         or ""
     )
     if not thread_id:
-        return DEFAULT_SESSION_TITLE
+        if diagnostics is not None:
+            diagnostics["reason"] = "missing_thread_id"
+        return None
 
-    return _read_thread_title(thread_id, event.get("cwd")) or DEFAULT_SESSION_TITLE
+    return _read_thread_title(thread_id, event.get("cwd"), diagnostics)
 
 
 def main() -> int:
@@ -287,6 +343,7 @@ def main() -> int:
     # behavior on surfaces that do not provide CODEX_THREAD_ID.
     current_thread_id = _current_thread_id()
     if current_thread_id and session_id != current_thread_id:
+        _record_diagnostic(event, "skipped", "session_mismatch" if session_id else "missing_session_id")
         emit({})
         return 0
 
@@ -302,13 +359,33 @@ def main() -> int:
         marker_fd = os.open(marker_path, os.O_CREAT | os.O_EXCL | os.O_WRONLY, 0o600)
         os.close(marker_fd)
     except FileExistsError:
+        _record_diagnostic(event, "skipped", "duplicate")
         emit({})
         return 0
     except OSError:
         emit({"systemMessage": "Bark task notification skipped (dedupe state unavailable)."})
         return 0
 
-    session_title = _resolve_session_title(event)
+    diagnostics: dict[str, str] = {}
+    session_title = _resolve_session_title(event, diagnostics)
+    # Metadata failures and unnamed internal sessions provide no useful alert.
+    # Keep the dedupe marker so repeated Stop events remain quiet.
+    if not session_title or session_title in {DEFAULT_SESSION_TITLE, "本轮会话已结束"}:
+        _record_diagnostic(event, "skipped", diagnostics.get("reason", "unknown") if not session_title else "generic_title")
+        emit({})
+        return 0
+
+    # Stop supplies the completed assistant reply directly; never read transcripts.
+    raw_reply = event.get("last_assistant_message")
+    preview = _normalize_session_title(raw_reply)
+    if not preview:
+        _record_diagnostic(event, "skipped", "missing_reply_preview")
+        emit({})
+        return 0
+    preview = preview[:30] + ("…" if len(preview) > 30 else "")
+    notification = json.dumps({"session_title": session_title,
+                               "reply_preview": preview}, ensure_ascii=False)
+
     command = [str(BARK_COMMAND), EVENT_NAME]
     if os.environ.get("CODEX_BARK_HOOK_DRY_RUN") == "1":
         command.append("--dry-run")
@@ -317,16 +394,18 @@ def main() -> int:
         result = subprocess.run(
             command,
             cwd=event.get("cwd") or None,
-            input=session_title.encode("utf-8"),
+            input=notification.encode("utf-8"),
             stdout=subprocess.DEVNULL,
             stderr=subprocess.DEVNULL,
             timeout=25,
             check=False,
         )
     except (OSError, subprocess.TimeoutExpired):
+        _record_diagnostic(event, "sender_failed", "sender_unavailable_or_timeout")
         emit({"systemMessage": "Bark task notification failed (redacted)."})
         return 0
 
+    _record_diagnostic(event, "sender_ok" if result.returncode == 0 else "sender_failed", diagnostics.get("reason", "unknown"))
     if result.returncode != 0:
         emit({"systemMessage": "Bark task notification failed (redacted)."})
     else:
