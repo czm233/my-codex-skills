@@ -25,3 +25,4 @@ skills/
 | `reflect/` | 从用户纠错中提炼有边界的候选规则，经审核后再写入项目 `AGENTS.md` |
 | `simple/` | 将复杂说明转成易懂中文，并提供流程图、时序图和对照表 |
 | `ui-review/` | `$ui-review` 默认检查并出报告；`$ui-review 记录` 增量维护 UI 规则 |
+| `ui-preview/` | 开发前独立 HTML 预演，支持元素多选、气泡备注和纯文本复制反馈 |

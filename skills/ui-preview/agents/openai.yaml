@@ -1,0 +1,4 @@
+interface:
+  display_name: "界面预演"
+  short_description: "将界面修改需求做成独立交互原型，支持元素多选、气泡备注和复制反馈"
+  default_prompt: "使用 $ui-preview 将这次界面修改需求做成可交互、可批注的 HTML 原型，先确认理解。"
