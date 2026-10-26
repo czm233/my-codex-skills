@@ -1,6 +1,6 @@
 {
   "name": "bark-notifications",
-  "version": "0.3.0",
+  "version": "0.3.1",
   "description": "Send a Bark notification with the local machine label and current Codex Session title after each completed turn.",
   "author": {
     "name": "czm233",
