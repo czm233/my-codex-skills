@@ -1,13 +1,14 @@
 {
   "name": "dsh-bark-notifications",
-  "version": "0.3.0",
+  "version": "0.3.1",
   "type": "module",
   "main": "./dsh/index.mjs",
   "files": [
     "dsh/index.mjs",
     "dsh/send.ps1",
     "cordis.patch.yml",
-    "README.md"
+    "README.md",
+    "dsh/test.mjs"
   ],
   "scripts": {
     "test": "node --test dsh/test.mjs"

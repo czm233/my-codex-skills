@@ -11,7 +11,7 @@
 - `bin/bark-task-complete`：解析本机机器标签，从 macOS 钥匙串读取 Bark Device Key，通过 Bark `/push` 接口发送经过清洗的 Session 标题与回复预览，机器标签用于分组。
 - `bin/bark-configure-machine`：写入或显示本机非敏感机器标签，不读取或处理 Bark Key。
 
-插件 Hook 通过运行时的插件根模板变量调用 Skill 内脚本：ZCode 使用 `${CLAUDE_PLUGIN_ROOT}`（或 `${ZCODE_PLUGIN_ROOT}`），Codex 使用 `${PLUGIN_ROOT}`。仓库自带的 `hooks/hooks.json` 写的是 ZCode 变量；在 Codex 上安装时需把它替换为 `${PLUGIN_ROOT}`。不要手动编辑 `~/.codex/hooks.json`，也不要在 `~/.codex/bin` 再复制一份 Bark 发送脚本。
+插件 Hook 通过运行时的插件根模板变量调用 Skill 内脚本：ZCode 使用 `${CLAUDE_PLUGIN_ROOT}`（或 `${ZCODE_PLUGIN_ROOT}`），Codex 使用 `${PLUGIN_ROOT}`。仓库自带的 `hooks/hooks.json` 使用 `${CLAUDE_PLUGIN_ROOT}`；当前 Codex 会提供该兼容变量，无需修改安装后的文件。旧运行时若不支持该变量，应升级运行时，不维护本地修改副本。不要手动编辑 `~/.codex/hooks.json`，也不要在 `~/.codex/bin` 再复制一份 Bark 发送脚本。
 
 ## 安装用户级插件
 
@@ -194,7 +194,7 @@ HTTP 200 只表示 Bark 接受了请求，不代表 APNs 一定已经在手机�
 | 现象 | 检查方向 |
 | --- | --- |
 | 仍看到旧 `/Users/.../.codex/skills/bark-notifications/...` 报错 | 结束迁移前启动的 Codex Desktop/app-server 或 CLI 会话并重新启动；不要恢复旧 `hooks.json` |
-| 报错路径形如 `/skills/bark-notifications/bin/bark-stop-hook`（缺少前缀） | Hook 命令里的插件根变量没有被运行时展开（展开为空）。ZCode 需使用 `${CLAUDE_PLUGIN_ROOT}`，Codex 需使用 `${PLUGIN_ROOT}`；核对 `hooks/hooks.json` 与当前运行时是否匹配 |
+| 报错路径形如 `/skills/bark-notifications/bin/bark-stop-hook`（缺少前缀） | Hook 命令里的插件根变量没有被运行时展开（展开为空）。核对运行时版本；当前 Codex 同时提供 `${PLUGIN_ROOT}` 与 `${CLAUDE_PLUGIN_ROOT}`。升级旧运行时，不修改插件缓存 |
 | 看不到 Hook 状态消息 | `hooks.json` 层级、Hook 功能开关、JSON 语法、Codex 重启和 `/hooks` 信任状态 |
 | 有状态消息但没有 Bark | `bark-task-complete` 的 dry-run、钥匙串 service/account、网络和 Bark API 状态 |
 | `credential-unavailable` | 本机没有正确保存 `codex-bark-notifications` / `codex` 项目 |

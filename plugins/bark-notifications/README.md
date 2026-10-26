@@ -42,7 +42,7 @@ Harness：启用「自定义插件市场」，在「发现」添加索引：
 
 `https://raw.githubusercontent.com/czm233/my-codex-skills/main/dsh-marketplace.json`
 
-刷新索引，选择 Bark Notifications 的新版本安装。需要重启时按客户端提示操作。首次安装仍需完成本地凭证配置；更新不会改变已有设置。
+刷新索引，选择 Bark Notifications 的新版本安装。当前 Harness 对第三方包可能要求先卸载再安装新版；卸载插件不会删除本插件放在 `%LOCALAPPDATA%\DSHBark` 的设置与凭证。需要重启时按客户端提示操作。首次安装仍需完成本地凭证配置；更新不会改变已有设置。
 
 Codex：从同一 GitHub 仓库刷新市场并安装新版：
 
