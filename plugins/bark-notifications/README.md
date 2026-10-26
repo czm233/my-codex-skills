@@ -2,6 +2,15 @@
 
 同一插件源码目录提供 Codex 和 DeepSeek Harness 两个入口。设备上的文件是安装产物，不是独立维护的源码。所有修改先在仓库完成，再发布新版本并由客户端更新。
 
+## DeepSeek Harness（macOS）
+
+0.4.0 起同一 DSH bundle 在 macOS 上启用两条通知路径：
+
+- **审批等待**：旁听 `approval/request` 事件瀑布——只发通知后原样 `next()` 透传，不回答、不拦截，任何失败都被吞掉，不影响审批主流程。桌面横幅（osascript）+ Bark 推送（`level=timeSensitive`）；审批处理后补发一条结果通知。
+- **回合结束**：与 Windows 相同的 turn-stopping Hook，经 `POST https://api.day.app/push` 发送。
+
+凭证：Bark device key 从登录钥匙串读取（service `codex-bark-notifications`、account `codex`），不经命令参数、仓库、日志或聊天；缺失时状态记为 `credential_unavailable`。本地配置 `~/Library/Application Support/DSHBark/settings.json` 仅存非敏感项：`machine_label`、`sound`、`desktop`（false 关桌面横幅）、`notify_answered`（false 关结果通知）。
+
 ## DeepSeek Harness（Windows）
 
 本目录的 `package.json` 声明 DSH bundle，`cordis.patch.yml` 按包名加载 `dsh/index.mjs`。通过 Harness「插件」页面安装发布版本；不要把源码复制到 `.dsh/plugins`，不要手工编辑桌面 profile 的依赖清单。

@@ -3,7 +3,7 @@ import assert from 'node:assert/strict';
 import { mkdtemp, rm } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
-import { createHandler,apply,replyPreview,normalizeText } from './index.mjs';
+import { createHandler,apply,replyPreview,normalizeText,approvalNotification } from './index.mjs';
 test('dedup, subagent exclusion, failure containment, no content access', async()=>{
  const root=await mkdtemp(join(tmpdir(),'dsh-bark-test-')); let calls=0;const records=[];
  try {
@@ -21,10 +21,23 @@ test('dedup, subagent exclusion, failure containment, no content access', async(
   assert.equal(JSON.stringify(records).includes('test'),false);
  }finally{await rm(root,{recursive:true,force:true})}
 });
-test('registers stopping event without calling sender',()=>{
- const previous=process.env.LOCALAPPDATA;process.env.LOCALAPPDATA=tmpdir();
- let event;apply({on:(e,h)=>{event=e;assert.equal(typeof h,'function')},logger:{info(){}}});assert.equal(event,'agent/turn-stopping');
- if(previous===undefined) delete process.env.LOCALAPPDATA; else process.env.LOCALAPPDATA=previous;
+test('registers turn-stopping and approval/request listeners without calling senders',()=>{
+ const events=[];
+ apply({on:(e,h)=>{events.push(e);assert.equal(typeof h,'function')},logger:{info(){}},sessionTitle:{get(){}}});
+ assert.ok(events.includes('agent/turn-stopping'));
+ assert.ok(events.includes('approval/request'));
+});
+
+test('approval notification folding and passthrough',()=>{
+ const n=approvalNotification({tool:'bash',reason:'  multi\nline   reason  '},{machine_label:'CZM-Mac'});
+ assert.equal(n.title,'CZM-Mac｜等待审批');
+ assert.equal(n.body,'bash：multi line reason');
+ assert.equal(n.group,'dsh-approval');
+ assert.equal(n.level,'timeSensitive');
+ const minimal=approvalNotification({}, {});
+ assert.equal(minimal.body,'工具 tool 正在等待你的批准');
+ const long=approvalNotification({tool:'t',reason:'字'.repeat(200)},{});
+ assert.equal(Array.from(long.body).length,162); // tool + '：' + 160 chars
 });
 
 test('Mac-compatible title and 30-character reply formatting',()=>{
