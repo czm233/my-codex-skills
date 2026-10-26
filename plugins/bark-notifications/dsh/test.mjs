@@ -25,7 +25,7 @@ test('registers turn-stopping and approval/request listeners without calling sen
  const events=[];
  apply({on:(e,h)=>{events.push(e);assert.equal(typeof h,'function')},logger:{info(){}},sessionTitle:{get(){}}});
  assert.ok(events.includes('agent/turn-stopping'));
- assert.ok(events.includes('approval/request'));
+ if (process.platform==='darwin') assert.ok(events.includes('approval/request')); // macOS-only approval listener
 });
 
 test('approval notification folding and passthrough',()=>{
