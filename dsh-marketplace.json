@@ -1,0 +1,32 @@
+{
+  "format": 1,
+  "title": {
+    "en": "My plugins",
+    "zh": "我的插件"
+  },
+  "plugins": [
+    {
+      "name": "dsh-bark-notifications",
+      "title": "Bark Notifications",
+      "description": {
+        "en": "Bark notifications after each Harness turn.",
+        "zh": "Harness 每轮回复结束后发送 Bark 通知。"
+      },
+      "repository": {
+        "url": "https://github.com/czm233/my-codex-skills"
+      },
+      "versions": [
+        {
+          "version": "0.3.0",
+          "publishTimestamp": 1792996880,
+          "source": {
+            "type": "git",
+            "url": "https://github.com/czm233/my-codex-skills",
+            "commit": "789130ea6bc23959d3f6b8db2bcf76f6453c5a6a",
+            "path": "plugins/bark-notifications"
+          }
+        }
+      ]
+    }
+  ]
+}
