@@ -1,0 +1,47 @@
+name: Bark plugin validation and market
+on:
+  push:
+    branches: [main]
+    paths: ['plugins/bark-notifications/**', 'tools/build-dsh-market.py', '.github/workflows/bark-release.yml']
+  workflow_dispatch:
+permissions:
+  contents: read
+concurrency:
+  group: bark-market
+  cancel-in-progress: false
+jobs:
+  test:
+    strategy:
+      matrix:
+        os: [macos-latest, windows-latest]
+    runs-on: ${{ matrix.os }}
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '22'
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.12'
+      - run: node --test plugins/bark-notifications/dsh/test.mjs
+      - if: runner.os == 'macOS'
+        run: python3 -m unittest discover -s plugins/bark-notifications/tests
+  market:
+    needs: test
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: ${{ github.sha }}
+      - name: Build pinned market index
+        run: python3 tools/build-dsh-market.py --repository https://github.com/czm233/my-codex-skills > dsh-marketplace.json
+      - name: Publish index
+        run: |
+          git add dsh-marketplace.json
+          if git diff --cached --quiet; then exit 0; fi
+          git config user.name github-actions[bot]
+          git config user.email 41898282+github-actions[bot]@users.noreply.github.com
+          git commit -m 'chore: update Bark plugin market index'
+          git push origin HEAD:main
