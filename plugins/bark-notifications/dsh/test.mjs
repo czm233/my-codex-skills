@@ -14,6 +14,7 @@ test('dedup, subagent exclusion, failure containment, no content access', async(
   await Promise.all([make()({agent,turn:1}),make()({agent,turn:1})]);assert.equal(calls,1);
   await make()({agent,turn:1});assert.equal(calls,1);
   await make()({agent:{session:{header:{id:'child',origin:'subagent'}}},turn:1});assert.equal(calls,1);
+   await make()({agent:{session:{header:{id:'resident',parentSession:'p1'}}},turn:1});assert.equal(calls,1);
   await make()({agent,turn:2});assert.equal(calls,2);
   await createHandler({stateDir:root,send,getNotification:notification,enabled:false})({agent,turn:3});assert.equal(calls,2);
   await createHandler({stateDir:root,getNotification:notification,send:async()=>{throw Error('secret')}})({agent,turn:4});

@@ -7,11 +7,15 @@ import { fileURLToPath } from 'node:url';
 export const name = 'bark-notifications';
 export const inject = ['agents', 'sessionTitle'];
 const here = dirname(fileURLToPath(import.meta.url));
+/** Child sessions (subagent tool children and resident continuable children) never notify; only top-level user sessions do. */
+export function isChildSession(header) {
+  return !!header && (header.origin === 'subagent' || header.parentSession != null);
+}
 export function createHandler({ stateDir, send, diagnostic = async () => {}, enabled = true, getNotification = async () => null }) {
   return async ({ agent, turn }) => {
     try {
       const h = agent?.session?.header;
-      if (!enabled || !h?.id || h.origin === 'subagent' || !Number.isInteger(turn) || turn < 0) return;
+      if (!enabled || !h?.id || isChildSession(h) || !Number.isInteger(turn) || turn < 0) return;
       const notification = await getNotification(agent, turn);
       if (!notification?.session_title || !notification?.reply_preview) return;
       const hash = createHash('sha256').update(JSON.stringify([h.id, turn])).digest('hex');
@@ -132,7 +136,7 @@ export function apply(ctx, config = {}) {
   if (process.platform === 'win32') {
     const replies = new WeakMap();
     ctx.on('session/event', (session,event) => {
-      if(session.header.origin==='subagent') return;
+      if(isChildSession(session.header)) return;
       if(event.type==='turn/start') replies.delete(session);
       if(event.type==='assistant/message') {
         replies.set(session,{turn:event.data.turn,preview:replyPreview(event.data.message)});
@@ -162,7 +166,7 @@ export function apply(ctx, config = {}) {
   // --- macOS: turn-finished push + approval-waiting push & desktop notification ---
   const replies = new WeakMap();
   ctx.on('session/event', (session,event) => {
-    if(session.header.origin==='subagent') return;
+      if(isChildSession(session.header)) return;
     if(event.type==='turn/start') replies.delete(session);
     if(event.type==='assistant/message') replies.set(session,{turn:event.data.turn,preview:replyPreview(event.data.message)});
   });
