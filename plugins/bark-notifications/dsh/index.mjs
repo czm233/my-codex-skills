@@ -62,7 +62,55 @@ export function replyPreview(message) {
 // --- macOS (Bark over HTTPS POST; the device key never leaves this machine's keychain) ---
 export const KEYCHAIN_SERVICE = 'codex-bark-notifications';
 export const KEYCHAIN_ACCOUNT = 'codex';
-export const BARK_PUSH_URL = 'https://api.day.app/push';
+export const BARK_BASE_URL = 'https://api.day.app';
+export const BARK_PUSH_URL = `${BARK_BASE_URL}/push`;
+export const BARK_DEFAULTS = Object.freeze({ baseUrl: BARK_BASE_URL, keychainService: KEYCHAIN_SERVICE, keychainAccount: KEYCHAIN_ACCOUNT });
+const SERVICE_PATTERN = /^[A-Za-z0-9._-]{1,128}$/;
+const ACCOUNT_PATTERN = /^[^\/\\\p{C}]{1,128}$/u;
+/** Accept only a clean http(s) origin (+ optional path prefix); anything else is unusable config. */
+export function normalizeBaseUrl(raw) {
+  if (typeof raw !== 'string') return null;
+  const value = raw.trim();
+  if (value === '' || /\s/.test(value)) return null;
+  let parsed;
+  try { parsed = new URL(value); } catch { return null; }
+  if (parsed.protocol !== 'http:' && parsed.protocol !== 'https:') return null;
+  if (parsed.username !== '' || parsed.password !== '' || parsed.search !== '' || parsed.hash !== '') return null;
+  let path = parsed.pathname.replace(/\/+$/, '');
+  if (path.toLowerCase().endsWith('/push')) path = path.slice(0, -5).replace(/\/+$/, '');
+  return parsed.origin + path;
+}
+/** Join /push onto a base URL without ever producing `//push` or `/push/push`. */
+export function barkPushUrl(baseUrl = BARK_BASE_URL) {
+  const base = normalizeBaseUrl(baseUrl);
+  if (!base) throw new TypeError('invalid Bark base URL');
+  return `${base}/push`;
+}
+function pickRaw(config, local) {
+  const plugin = config?.bark && typeof config.bark === 'object' ? config.bark : {};
+  const localCfg = local && typeof local === 'object' ? local : {};
+  return {
+    baseUrl: [plugin.baseUrl ?? config?.baseUrl, localCfg.bark_base_url ?? localCfg.baseUrl],
+    keychainService: [plugin.keychainService ?? config?.keychainService, localCfg.bark_keychain_service ?? localCfg.keychainService],
+    keychainAccount: [plugin.keychainAccount ?? config?.keychainAccount, localCfg.bark_keychain_account ?? localCfg.keychainAccount],
+  };
+}
+/** Priority: DSH plugin config > local settings.json > built-in default. Invalid values fall through to the next source. */
+export function resolveBarkConfig(config = {}, local = {}) {
+  const raw = pickRaw(config, local);
+  const baseUrl = (normalizeBaseUrl(raw.baseUrl[0]) && { value: normalizeBaseUrl(raw.baseUrl[0]), source: 'config' })
+    || (normalizeBaseUrl(raw.baseUrl[1]) && { value: normalizeBaseUrl(raw.baseUrl[1]), source: 'settings' })
+    || { value: BARK_DEFAULTS.baseUrl, source: 'default' };
+  const pick = (name, pattern) => {
+    const [fromConfig, fromSettings] = raw[name];
+    if (typeof fromConfig === 'string' && pattern.test(fromConfig.trim())) return { value: fromConfig.trim(), source: 'config' };
+    if (typeof fromSettings === 'string' && pattern.test(fromSettings.trim())) return { value: fromSettings.trim(), source: 'settings' };
+    return { value: BARK_DEFAULTS[name], source: 'default' };
+  };
+  const service = pick('keychainService', SERVICE_PATTERN);
+  const account = pick('keychainAccount', ACCOUNT_PATTERN);
+  return { baseUrl: baseUrl.value, baseUrlSource: baseUrl.source, keychainService: service.value, keychainServiceSource: service.source, keychainAccount: account.value, keychainAccountSource: account.source };
+}
 export function macStateRoot() { return join(homedir(), 'Library', 'Application Support', 'DSHBark'); }
 export function stateRoot() {
   if (process.platform === 'win32') return join(process.env.LOCALAPPDATA, 'DSHBark');
@@ -82,15 +130,20 @@ export function readKeychainKey(service = KEYCHAIN_SERVICE, account = KEYCHAIN_A
     });
   });
 }
-/** POST one Bark push. Resolves {status, http_status?}; never rejects, never exposes the key. */
-export async function sendViaBarkPush({ title, body, sound, group = 'dsh', level = 'active', url }) {
+/**
+ * POST one Bark push. Resolves {status, http_status?}; never rejects, never exposes the key.
+ * With no bark overrides the request is byte-for-byte the historical one (BARK_PUSH_URL + default keychain entry).
+ */
+export async function sendViaBarkPush({ title, body, sound, group = 'dsh', level = 'active', url, bark }) {
   try {
-    const device_key = await readKeychainKey();
+    const target = bark ? resolveBarkConfig({}, bark) : BARK_DEFAULTS;
+    const pushUrl = normalizeBaseUrl(target.baseUrl) === BARK_BASE_URL ? BARK_PUSH_URL : barkPushUrl(target.baseUrl);
+    const device_key = await readKeychainKey(target.keychainService, target.keychainAccount);
     if (!device_key) return { status: 'credential_unavailable' };
     const payload = { device_key, title, body, group, level };
     if (sound) payload.sound = sound;
     if (url) payload.url = url;
-    const res = await fetch(BARK_PUSH_URL, {
+    const res = await fetch(pushUrl, {
       method: 'POST',
       headers: { 'content-type': 'application/json; charset=utf-8' },
       body: JSON.stringify(payload),
@@ -130,6 +183,22 @@ export function approvalNotification(req, local = {}) {
     group: 'dsh-approval',
     level: 'timeSensitive',
   };
+}
+/** Redacted view of the effective config: URL and source only, never the device key. */
+export async function inspectBarkConfig({ config = {}, root = stateRoot() } = {}) {
+  const local = await readLocalSettings(root);
+  const resolved = resolveBarkConfig(config, local);
+  const keychainKeyPresent = (await readKeychainKey(resolved.keychainService, resolved.keychainAccount)) !== null;
+  return { ...resolved, pushUrl: barkPushUrl(resolved.baseUrl), keychainKeyPresent, settingsFile: join(root, 'settings.json') };
+}
+export function formatBarkConfig(report) {
+  return [
+    `push url  : ${report.pushUrl}`,
+    `base url  : ${report.baseUrl} (${report.baseUrlSource})`,
+    `keychain  : service=${report.keychainService} (${report.keychainServiceSource}) account=${report.keychainAccount} (${report.keychainAccountSource})`,
+    `device key: ${report.keychainKeyPresent ? 'present in keychain' : 'missing'}`,
+    `settings  : ${report.settingsFile}`,
+  ].join('\n');
 }
 export function apply(ctx, config = {}) {
   const root = stateRoot();
@@ -183,11 +252,13 @@ export function apply(ctx, config = {}) {
     const local = await readLocalSettings(root);
     return {session_title:title,reply_preview:reply.preview,machine_label:machineLabel(local),sound:validSound(local,'bell_quiet')};
   };
-  const push = notification => sendViaBarkPush({
+  // Settings are re-read per push so a base URL / keychain change applies without restarting DSH.
+  const push = async notification => sendViaBarkPush({
     title: `${notification.machine_label}｜${notification.session_title}`,
     body: notification.reply_preview,
     sound: notification.sound,
     group: 'dsh',
+    bark: resolveBarkConfig(config, await readLocalSettings(root)),
   });
   ctx.on('agent/turn-stopping', createHandler({stateDir:join(root,'dedup'),send:push,diagnostic,enabled:config.enabled!==false,getNotification}));
   // Approval waiting: listen-only on the approval/request waterfall — notify, then pass through untouched.
@@ -197,7 +268,7 @@ export function apply(ctx, config = {}) {
         if (local.desktop === false) return;
         const n = approvalNotification(req, local);
         notifyDesktop(n.title, n.body, 'Glass');
-        return sendViaBarkPush(n);
+        return sendViaBarkPush({ ...n, bark: resolveBarkConfig(config, local) });
       }).catch(() => {});
       const result = next();
       if (result && typeof result.then === 'function') {
