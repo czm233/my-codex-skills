@@ -11,6 +11,38 @@
 
 凭证：Bark device key 从登录钥匙串读取（service `codex-bark-notifications`、account `codex`），不经命令参数、仓库、日志或聊天；缺失时状态记为 `credential_unavailable`。本地配置 `~/Library/Application Support/DSHBark/settings.json` 仅存非敏感项：`machine_label`、`sound`、`desktop`（false 关桌面横幅）、`notify_answered`（false 关结果通知）。
 
+### 服务器地址与钥匙串条目（0.4.2 起可配置）
+
+默认值就是历史行为，什么都不配时请求仍发往 `https://api.day.app/push`：
+
+| 配置项 | settings.json 字段 | 默认值 | 说明 |
+| --- | --- | --- | --- |
+| baseUrl | `bark_base_url` | `https://api.day.app` | 只写服务器根地址，**不要带 `/push`**；带了也会被去掉 |
+| keychainService | `bark_keychain_service` | `codex-bark-notifications` | 钥匙串 service 名 |
+| keychainAccount | `bark_keychain_account` | `codex` | 钥匙串 account 名 |
+
+优先级：**DSH 插件配置 > settings.json > 默认值**。插件配置来自 DSH 的 `apply(ctx, config)`，写成 `bark: { baseUrl, keychainService, keychainAccount }`（顶层同名键也接受）。理由：插件配置是应用级、显式、临时生效的覆盖；settings.json 是本机偏好。改 settings.json 不用重启 DSH，下一次推送即生效；改插件配置需要重启 DSH。
+
+无效值（非 http/https、带账号密码/查询串、空串）会被忽略并回落到下一级，不会静默发到别处。`/push` 拼接会去掉末尾斜杠，不会出现 `//push` 或 `/push/push`。
+
+自建服务器示例（地址与 key 均需换成自己的，key 只进钥匙串、不进本文件）：
+
+```json
+{"bark_base_url":"http://10.100.0.2:30137","bark_keychain_service":"codex-bark-notifications-selfhosted"}
+```
+
+切到自建服务器后必须换成该服务器注册的 device_key，官方 key 在自建服务器上无效（返回 400）。两个 key 可以并存：用不同的 `bark_keychain_service` 分开存。
+
+自检（只输出地址、来源与 key 是否存在，不输出 key）：
+
+```sh
+node -e "import('dsh/index.mjs').then(async m=>console.log(m.formatBarkConfig(await m.inspectBarkConfig())))"
+```
+
+Windows 入口（`dsh/send.ps1`）目前仍只支持官方地址 `https://api.day.app/push`。
+
+Codex 入口（`skills/bark-notifications/bin/bark-task-complete`）读的是 `~/.codex/bark-notifications.json`，同样支持 `bark_base_url`、`bark_keychain_service`、`bark_keychain_account`，缺省行为不变。
+
 ## DeepSeek Harness（Windows）
 
 本目录的 `package.json` 声明 DSH bundle，`cordis.patch.yml` 按包名加载 `dsh/index.mjs`。通过 Harness「插件」页面安装发布版本；不要把源码复制到 `.dsh/plugins`，不要手工编辑桌面 profile 的依赖清单。
