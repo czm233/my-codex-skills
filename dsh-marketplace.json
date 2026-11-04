@@ -22,7 +22,7 @@
           "source": {
             "type": "git",
             "url": "https://github.com/czm233/my-codex-skills",
-            "commit": "6f2c915f2fd5b1954161bc3ffc453b2218bc6197",
+            "commit": "0248ad0565836bd9dd99ba4e1302e0c02c6d50ec",
             "path": "plugins/bark-notifications"
           }
         }
