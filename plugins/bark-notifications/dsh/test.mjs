@@ -105,6 +105,21 @@ test('configured base URL is used by the sender',async()=>{
     assert.equal(calls[0].url,'http://10.100.0.2:30137/push');
   });
 });
+test('self-hosted 400 "failed to get device token" counts as queued, official 400 stays a failure',async()=>{
+  if(!await readKeychainKey()) return;
+  const mock=status=>({ok:false,status,text:async()=>'{"code":400,"message":"failed to get device token: device token invalid"}'});
+  const orig=globalThis.fetch;
+  try{
+    globalThis.fetch=async()=>mock(400);
+    const selfHosted=await sendViaBarkPush({title:'t',body:'b',bark:{baseUrl:'http://10.100.0.2:30137'}});
+    assert.equal(selfHosted.status,'accepted');assert.equal(selfHosted.http_status,400);
+    const official=await sendViaBarkPush({title:'t',body:'b'});
+    assert.equal(official.status,'send_failed');assert.equal(official.http_status,400);
+    globalThis.fetch=async()=>({ok:false,status:400,text:async()=>'{"code":400,"message":"bad request"}'});
+    const other=await sendViaBarkPush({title:'t',body:'b',bark:{baseUrl:'http://10.100.0.2:30137'}});
+    assert.equal(other.status,'send_failed');
+  }finally{globalThis.fetch=orig}
+});
 test('invalid base URLs are rejected and never silently sent elsewhere',()=>{
   for(const bad of ['', '   ', 'ftp://host', 'javascript:alert(1)', 'http://user:pw@host:1', 'http://host:1/push?x=1', 'not a url']) assert.equal(normalizeBaseUrl(bad),null,String(bad));
   assert.throws(()=>barkPushUrl('ftp://host'),TypeError);

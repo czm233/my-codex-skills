@@ -130,13 +130,17 @@ export function readKeychainKey(service = KEYCHAIN_SERVICE, account = KEYCHAIN_A
     });
   });
 }
+async function bodyMentionsDeviceToken(res) {
+  try { return /device token/i.test(await res.text()); } catch { return false; }
+}
 /**
  * POST one Bark push. Resolves {status, http_status?}; never rejects, never exposes the key.
  * With no bark overrides the request is byte-for-byte the historical one (BARK_PUSH_URL + default keychain entry).
  */
 export async function sendViaBarkPush({ title, body, sound, group = 'dsh', level = 'active', url, bark }) {
+  let target;
   try {
-    const target = bark ? resolveBarkConfig({}, bark) : BARK_DEFAULTS;
+    target = bark ? resolveBarkConfig({}, bark) : BARK_DEFAULTS;
     const pushUrl = normalizeBaseUrl(target.baseUrl) === BARK_BASE_URL ? BARK_PUSH_URL : barkPushUrl(target.baseUrl);
     const device_key = await readKeychainKey(target.keychainService, target.keychainAccount);
     if (!device_key) return { status: 'credential_unavailable' };
@@ -149,7 +153,11 @@ export async function sendViaBarkPush({ title, body, sound, group = 'dsh', level
       body: JSON.stringify(payload),
       signal: AbortSignal.timeout(10000),
     });
-    return { status: res.ok ? 'accepted' : 'send_failed', http_status: res.status };
+    // A self-hosted server answers 400 "failed to get device token" when APNs delivery failed but the
+    // message was already queued for offline polling: the request itself succeeded, so it must not
+    // poison the dedupe record (the notification would otherwise be lost for that turn).
+    const queuedOffline = target?.baseUrl !== BARK_BASE_URL && res.status === 400 && await bodyMentionsDeviceToken(res);
+    return { status: res.ok || queuedOffline ? 'accepted' : 'send_failed', http_status: res.status };
   } catch { return { status: 'send_failed' }; }
 }
 /** Fire-and-forget macOS desktop notification. Failures are swallowed. */
