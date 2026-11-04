@@ -3,7 +3,7 @@ import assert from 'node:assert/strict';
 import { mkdtemp, rm } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
-import { createHandler,apply,replyPreview,normalizeText,approvalNotification } from './index.mjs';
+import { createHandler,apply,replyPreview,normalizeText,approvalNotification,resolveBarkConfig,barkPushUrl,normalizeBaseUrl,BARK_DEFAULTS,BARK_PUSH_URL,sendViaBarkPush,readKeychainKey,inspectBarkConfig,formatBarkConfig } from './index.mjs';
 test('dedup, subagent exclusion, failure containment, no content access', async()=>{
  const root=await mkdtemp(join(tmpdir(),'dsh-bark-test-')); let calls=0;const records=[];
  try {
@@ -56,4 +56,90 @@ test('Windows sender input preserves Chinese JSON', {skip:process.platform!=='wi
  const ps=`$ErrorActionPreference='Stop';[Console]::OutputEncoding=[Text.Encoding]::UTF8;${encoding};$n=[Console]::In.ReadToEnd()|ConvertFrom-Json;[Console]::Write($n.session_title)`;
  const r=spawnSync('powershell.exe',['-NoProfile','-NonInteractive','-EncodedCommand',Buffer.from(ps,'utf16le').toString('base64')],{input:JSON.stringify({session_title:'中文通知测试'}),encoding:'utf8',timeout:10000});
  assert.equal(r.status,0);assert.equal(r.stdout,'中文通知测试');
+});
+
+// --- Configurable base URL / keychain entry (defaults must stay byte-identical) ---
+const withFetch = async (fn) => {
+  const calls = [];
+  const original = globalThis.fetch;
+  globalThis.fetch = async (url, init) => {
+    calls.push({ url: String(typeof url === 'string' ? url : url?.url ?? url), init });
+    return { ok: true, status: 200 };
+  };
+  try { await fn(calls); } finally { globalThis.fetch = original; }
+};
+test('default config resolves to the historical values',()=>{
+  const value=resolveBarkConfig({},{});
+  assert.deepEqual({...value},{baseUrl:'https://api.day.app',baseUrlSource:'default',keychainService:'codex-bark-notifications',keychainServiceSource:'default',keychainAccount:'codex',keychainAccountSource:'default'});
+  assert.equal(barkPushUrl(),'https://api.day.app/push');
+  assert.equal(BARK_PUSH_URL,'https://api.day.app/push');
+  assert.deepEqual({...BARK_DEFAULTS},{baseUrl:'https://api.day.app',keychainService:'codex-bark-notifications',keychainAccount:'codex'});
+});
+test('unconfigured push still goes to https://api.day.app/push with no bark override',async()=>{
+  const key=await readKeychainKey();
+  if(!key) return; // no local credential: the request path cannot be exercised
+  await withFetch(async calls=>{
+    const r=await sendViaBarkPush({title:'t',body:'b',sound:'bell'});
+    assert.equal(r.status,'accepted');assert.equal(r.http_status,200);
+    assert.equal(calls.length,1);
+    assert.equal(calls[0].url,'https://api.day.app/push');
+    assert.equal(calls[0].init.method,'POST');
+    assert.deepEqual(Object.keys(JSON.parse(calls[0].init.body)),['device_key','title','body','group','level','sound']);
+  });
+});
+test('configured base URL joins /push without double slashes',async()=>{
+  for(const [input,expected] of [
+    ['http://10.100.0.2:30137','http://10.100.0.2:30137/push'],
+    ['http://10.100.0.2:30137/','http://10.100.0.2:30137/push'],
+    ['http://10.100.0.2:30137//','http://10.100.0.2:30137/push'],
+    ['http://10.100.0.2:30137/push','http://10.100.0.2:30137/push'],
+    ['  http://10.100.0.2:30137/  ','http://10.100.0.2:30137/push'],
+    ['https://bark.example.com/bark/','https://bark.example.com/bark/push'],
+  ]) assert.equal(barkPushUrl(input),expected,input);
+  assert.throws(()=>barkPushUrl('nonsense'),TypeError);
+});
+test('configured base URL is used by the sender',async()=>{
+  if(!await readKeychainKey()) return;
+  await withFetch(async calls=>{
+    await sendViaBarkPush({title:'t',body:'b',bark:{baseUrl:'http://10.100.0.2:30137'}});
+    assert.equal(calls[0].url,'http://10.100.0.2:30137/push');
+  });
+});
+test('invalid base URLs are rejected and never silently sent elsewhere',()=>{
+  for(const bad of ['', '   ', 'ftp://host', 'javascript:alert(1)', 'http://user:pw@host:1', 'http://host:1/push?x=1', 'not a url']) assert.equal(normalizeBaseUrl(bad),null,String(bad));
+  assert.throws(()=>barkPushUrl('ftp://host'),TypeError);
+  // invalid config falls through to the next source, eventually the default
+  assert.equal(resolveBarkConfig({bark:{baseUrl:'ftp://bad'}},{}).baseUrlSource,'default');
+  assert.equal(resolveBarkConfig({bark:{baseUrl:'ftp://bad'}},{bark_base_url:'http://10.100.0.2:30137'}).baseUrl,'http://10.100.0.2:30137');
+});
+test('configuration priority: plugin config > settings.json > default',()=>{
+  const C={bark:{baseUrl:'http://cfg:1',keychainService:'svc-cfg',keychainAccount:'acct-cfg'}};
+  const L={bark_base_url:'http://local:2',bark_keychain_service:'svc-local',bark_keychain_account:'acct-local'};
+  const both=resolveBarkConfig(C,L);
+  assert.equal(both.baseUrl,'http://cfg:1');assert.equal(both.baseUrlSource,'config');
+  assert.equal(both.keychainService,'svc-cfg');assert.equal(both.keychainAccount,'acct-cfg');
+  const localOnly=resolveBarkConfig({},L);
+  assert.equal(localOnly.baseUrl,'http://local:2');assert.equal(localOnly.baseUrlSource,'settings');
+  assert.equal(localOnly.keychainService,'svc-local');assert.equal(localOnly.keychainAccount,'acct-local');
+  const partial=resolveBarkConfig({bark:{baseUrl:'http://cfg:1'}},L);
+  assert.equal(partial.baseUrl,'http://cfg:1');assert.equal(partial.keychainService,'svc-local');
+  // top-level config keys are still accepted, nested bark.* wins
+  assert.equal(resolveBarkConfig({baseUrl:'http://top:3'},{}).baseUrl,'http://top:3');
+  assert.equal(resolveBarkConfig({baseUrl:'http://top:3',bark:{baseUrl:'http://nested:4'}},{}).baseUrl,'http://nested:4');
+});
+test('inspect config is redacted and reports the source',async()=>{
+  const root=await mkdtemp(join(tmpdir(),'dsh-bark-inspect-'));
+  try{
+    const d=await inspectBarkConfig({config:{},root});
+    assert.equal(d.pushUrl,'https://api.day.app/push');assert.equal(d.baseUrlSource,'default');
+    const text=formatBarkConfig(d);
+    assert.match(text,/https:\/\/api\.day\.app\/push/);assert.match(text,/\(default\)/);
+    const realKey=await readKeychainKey();
+    if(realKey) assert.equal(text.includes(realKey),false);
+    await import('node:fs/promises').then(fs=>fs.writeFile(join(root,'settings.json'),JSON.stringify({bark_base_url:'http://10.100.0.2:30137/'})));
+    const d2=await inspectBarkConfig({config:{},root});
+    assert.equal(d2.pushUrl,'http://10.100.0.2:30137/push');assert.equal(d2.baseUrlSource,'settings');
+    const d3=await inspectBarkConfig({config:{bark:{baseUrl:'http://cfg:1'}},root});
+    assert.equal(d3.pushUrl,'http://cfg:1/push');assert.equal(d3.baseUrlSource,'config');
+  }finally{await rm(root,{recursive:true,force:true})}
 });
