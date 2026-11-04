@@ -149,6 +149,56 @@ class BarkPluginTests(unittest.TestCase):
                 path.write_text("{broken", encoding="utf-8")
                 self.assertEqual(sender.resolve_sound(), "bell")
 
+    def test_sender_endpoint_is_configurable_with_official_default(self) -> None:
+        sender = load_module("bark_endpoint_test", BIN_ROOT / "bark-task-complete")
+        urls: list[str] = []
+
+        def fake_run(command: list[str], **kwargs: object) -> subprocess.CompletedProcess[bytes]:
+            if command[0] == "/usr/bin/security":
+                return subprocess.CompletedProcess(command, 0, stdout=b"placeholder")
+            if command[0] == "/usr/bin/curl":
+                urls.append(command[command.index("POST") + 1])
+                return subprocess.CompletedProcess(command, 0, stdout=b"status=200")
+            raise AssertionError(f"unexpected subprocess: {command}")
+
+        def send(codex_home: str) -> None:
+            with (
+                mock.patch.dict(
+                    os.environ,
+                    {"CODEX_HOME": codex_home, "CODEX_BARK_MACHINE_LABEL": "Test"},
+                    clear=False,
+                ),
+                mock.patch.object(sender.subprocess, "run", side_effect=fake_run),
+                mock.patch.object(sender.sys, "argv", ["bark-task-complete", "turn_stopped"]),
+                mock.patch.object(sender.sys, "stdin", io.StringIO('{"session_title":"S","reply_preview":"P"}')),
+            ):
+                self.assertEqual(sender.main(), 0)
+
+        with tempfile.TemporaryDirectory(prefix="bark-endpoint-") as home:
+            config = Path(home) / "bark-notifications.json"
+            send(home)  # no config file at all
+            for value, expected in (
+                ("http://10.100.0.2:30137", "http://10.100.0.2:30137/push"),
+                ("http://10.100.0.2:30137/", "http://10.100.0.2:30137/push"),
+                ("http://10.100.0.2:30137/push", "http://10.100.0.2:30137/push"),
+                ("ftp://bad", "https://api.day.app/push"),
+                (123, "https://api.day.app/push"),
+            ):
+                config.write_text(json.dumps({"bark_base_url": value}), encoding="utf-8")
+                send(home)
+            config.write_text(json.dumps({"sound": "bell_quiet"}), encoding="utf-8")
+            send(home)
+
+        self.assertEqual(urls, [
+            "https://api.day.app/push",
+            "http://10.100.0.2:30137/push",
+            "http://10.100.0.2:30137/push",
+            "http://10.100.0.2:30137/push",
+            "https://api.day.app/push",
+            "https://api.day.app/push",
+            "https://api.day.app/push",
+        ])
+
     def test_machine_config_isolated_and_protected_from_silent_overwrite(self) -> None:
         configurer = load_module(
             "bark_configure_machine_test", BIN_ROOT / "bark-configure-machine"

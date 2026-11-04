@@ -10,11 +10,13 @@ import pathlib
 import subprocess
 import sys
 import unicodedata
+import urllib.parse
 
 
 BARK_KEYCHAIN_SERVICE = "codex-bark-notifications"
 BARK_KEYCHAIN_ACCOUNT = "codex"
-BARK_ENDPOINT = "https://api.day.app/push"
+BARK_BASE_URL = "https://api.day.app"
+BARK_ENDPOINT = BARK_BASE_URL + "/push"
 BARK_GROUP_PREFIX = "codex-task-status"
 DEFAULT_MACHINE_LABEL = "Mac"
 MACHINE_CONFIG_FILENAME = "bark-notifications.json"
@@ -90,6 +92,73 @@ def _read_configured_machine_label() -> str | None:
     if not isinstance(config, dict):
         return None
     return normalize_machine_label(config.get("machine_label"))
+
+
+def normalize_base_url(raw: object) -> str | None:
+    """Accept only a clean http(s) origin with an optional path prefix; never a query or credentials."""
+    if not isinstance(raw, str):
+        return None
+    value = raw.strip()
+    if not value or any(character.isspace() for character in value):
+        return None
+    try:
+        parsed = urllib.parse.urlsplit(value)
+    except ValueError:
+        return None
+    if parsed.scheme not in ("http", "https") or not parsed.netloc:
+        return None
+    if parsed.username is not None or parsed.password is not None or parsed.query or parsed.fragment:
+        return None
+    path = parsed.path.rstrip("/")
+    if path.lower().endswith("/push"):
+        path = path[:-5].rstrip("/")
+    return f"{parsed.scheme}://{parsed.netloc}{path}"
+
+
+def bark_push_url(base_url: object) -> str:
+    """Join /push onto a base URL without producing '//push' or '/push/push'."""
+    base = normalize_base_url(base_url)
+    if base is None:
+        raise ValueError("invalid base url")
+    return base + "/push"
+
+
+def resolve_endpoint() -> str:
+    """Use bark_base_url from the local config; absent or invalid falls back to the official endpoint."""
+    config_path = _codex_home() / MACHINE_CONFIG_FILENAME
+    try:
+        config = json.loads(config_path.read_text(encoding="utf-8"))
+    except (OSError, ValueError, TypeError):
+        return BARK_ENDPOINT
+    if not isinstance(config, dict):
+        return BARK_ENDPOINT
+    try:
+        return bark_push_url(config.get("bark_base_url"))
+    except ValueError:
+        return BARK_ENDPOINT
+
+
+def resolve_keychain_entry() -> tuple[str, str]:
+    """Non-secret keychain names may live in the same local config; they never hold the key itself."""
+    config_path = _codex_home() / MACHINE_CONFIG_FILENAME
+    try:
+        config = json.loads(config_path.read_text(encoding="utf-8"))
+    except (OSError, ValueError, TypeError):
+        return BARK_KEYCHAIN_SERVICE, BARK_KEYCHAIN_ACCOUNT
+    if not isinstance(config, dict):
+        return BARK_KEYCHAIN_SERVICE, BARK_KEYCHAIN_ACCOUNT
+    service = config.get("bark_keychain_service")
+    account = config.get("bark_keychain_account")
+    valid_service = isinstance(service, str) and 0 < len(service.strip()) <= 128 and not any(
+        character in service or character.isspace() for character in "/\\"
+    )
+    valid_account = isinstance(account, str) and 0 < len(account.strip()) <= 128 and not any(
+        unicodedata.category(character).startswith("C") or character in "/\\" for character in account
+    )
+    return (
+        service.strip() if valid_service else BARK_KEYCHAIN_SERVICE,
+        account.strip() if valid_account else BARK_KEYCHAIN_ACCOUNT,
+    )
 
 
 def resolve_sound() -> str:
@@ -201,15 +270,16 @@ def main() -> int:
         emit(f"status=dry-run event={event_name} sent=false")
         return 0
 
+    keychain_service, keychain_account = resolve_keychain_entry()
     try:
         credential_result = subprocess.run(
             [
                 "/usr/bin/security",
                 "find-generic-password",
                 "-a",
-                BARK_KEYCHAIN_ACCOUNT,
+                keychain_account,
                 "-s",
-                BARK_KEYCHAIN_SERVICE,
+                keychain_service,
                 "-w",
             ],
             stdin=subprocess.DEVNULL,
@@ -263,7 +333,7 @@ def main() -> int:
                 "status=%{http_code} total=%{time_total}s",
                 "--request",
                 "POST",
-                BARK_ENDPOINT,
+                resolve_endpoint(),
                 "--header",
                 "Content-Type: application/json; charset=utf-8",
                 "--data-binary",
