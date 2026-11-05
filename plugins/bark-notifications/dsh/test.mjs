@@ -206,6 +206,6 @@ test('sender appends the configured device name to the title it posts',async()=>
   assert.equal(JSON.parse(calls[0].init.body).title,'构建完成｜MacBook');
   assert.equal(JSON.parse(calls[1].init.body).title,'构建完成｜MacBook');
   assert.equal(JSON.parse(calls[2].init.body).title,`构建完成｜${machineLabel({})}`); // no device: hostname fallback
-  assert.equal(JSON.parse(calls[0].init.body).body,''); // body is display-only and may be empty
+  assert.equal(JSON.parse(calls[0].init.body).body,'任务完成'); // empty body falls back to a short placeholder
  });
 });

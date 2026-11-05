@@ -145,7 +145,9 @@ export async function sendViaBarkPush({ title, body, sound, group = 'dsh', level
     const pushUrl = normalizeBaseUrl(target.baseUrl) === BARK_BASE_URL ? BARK_PUSH_URL : barkPushUrl(target.baseUrl);
     const device_key = await readKeychainKey(target.keychainService, target.keychainAccount);
     if (!device_key) return { status: 'credential_unavailable' };
-    const payload = { device_key, title: composeTitle(title, normalizeText(deviceName, MAX_DEVICE_NAME_INPUT_CHARS) || machineLabel({})), body, group, level };
+    // The phone only reads the title, but iOS/Bark shows an empty body poorly; keep a flat placeholder.
+    const bodyText = typeof body === 'string' && body.trim() !== '' ? body : DEFAULT_BODY;
+    const payload = { device_key, title: composeTitle(title, normalizeText(deviceName, MAX_DEVICE_NAME_INPUT_CHARS) || machineLabel({})), body: bodyText, group, level };
     if (sound) payload.sound = sound;
     if (url) payload.url = url;
     const res = await fetch(pushUrl, {
@@ -174,6 +176,7 @@ export async function readLocalSettings(root) {
   try { const v = JSON.parse(await readFile(join(root, 'settings.json'), 'utf8')); return v && typeof v === 'object' ? v : {}; } catch { return {}; }
 }
 export const TITLE_SEPARATOR = '｜';
+export const DEFAULT_BODY = '任务完成';
 /** The phone reads at most 60 characters before replacing the separator, so a long device name is cut off with it. */
 export const MAX_DEVICE_NAME_CHARS = 6;
 export const MAX_DEVICE_NAME_INPUT_CHARS = 24;
