@@ -103,11 +103,11 @@ class BarkPluginTests(unittest.TestCase):
                 sender.sys.stdin = io.StringIO("")
                 self.assertEqual(sender.main(), 0)
 
-        self.assertEqual(payloads[0]["title"], "Air (Lab)")
+        self.assertEqual(payloads[0]["title"], "Session 含控制符｜Air (Lab)")
         self.assertEqual(payloads[0]["body"], "Session 含控制符")
         self.assertEqual(payloads[0]["group"], "codex-task-status:Air (Lab)")
         self.assertEqual(payloads[0]["sound"], "bell")
-        self.assertEqual(payloads[1]["title"], "Mini")
+        self.assertEqual(payloads[1]["title"], "本轮回复已结束｜Mini")
         self.assertEqual(payloads[1]["body"], "本轮回复已结束")
         self.assertEqual(payloads[1]["group"], "codex-task-status:Mini")
         self.assertEqual(payloads[1]["sound"], "bell_quiet")
@@ -131,7 +131,7 @@ class BarkPluginTests(unittest.TestCase):
                     {"session_title": "会话标题", "reply_preview": reply}))):
                     self.assertEqual(sender.main(), 0)
         self.assertEqual(len(payloads), 3)
-        self.assertEqual(payloads[0]["title"], "会话标题 · 测试用户的完整电脑名称")
+        self.assertEqual(payloads[0]["title"], "会话标题｜测试用户的完整电脑名称")
         self.assertEqual(payloads[0]["body"], "短回复")
         self.assertEqual(payloads[1]["body"], "字" * 30 + "…")
         self.assertEqual(payloads[2]["body"], "换行 测试")

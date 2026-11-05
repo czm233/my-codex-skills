@@ -256,15 +256,15 @@ def main() -> int:
         notification = None
     if isinstance(notification, dict):
         session_title = normalize_session_title(notification.get("session_title"))
-        title = f"{session_title} · {machine_label}"
+        title = f"{session_title}｜{machine_label}"
         body = normalize_reply_preview(notification.get("reply_preview"))
         if not body:
             emit("status=skipped category=missing-reply-preview")
             return 0
     else:
         # Preserve compatibility for explicit legacy standalone calls.
-        title = machine_label
         body = normalize_session_title(raw_input)
+        title = f"{body}｜{machine_label}"
 
     if dry_run:
         emit(f"status=dry-run event={event_name} sent=false")

@@ -172,6 +172,9 @@ export function notifyDesktop(title, body, sound = 'Glass') {
 export async function readLocalSettings(root) {
   try { const v = JSON.parse(await readFile(join(root, 'settings.json'), 'utf8')); return v && typeof v === 'object' ? v : {}; } catch { return {}; }
 }
+export function notificationTitle(title, machine) {
+  return `${title}｜${machine}`;
+}
 export function machineLabel(local) {
   return normalizeText(local.machine_label || hostname(), 24).replace(/\[/g,'(').replace(/\]/g,')') || 'Mac';
 }
@@ -185,7 +188,7 @@ export function approvalNotification(req, local = {}) {
     : typeof req?.reason === 'string' ? req.reason : '';
   const reason = normalizeText(raw, 160);
   return {
-    title: `${machineLabel(local)}｜等待审批`,
+    title: notificationTitle('等待审批', machineLabel(local)),
     body: reason === '' ? `工具 ${tool} 正在等待你的批准` : `${tool}：${reason}`,
     sound: validSound(local, 'bell'),
     group: 'dsh-approval',
@@ -262,7 +265,7 @@ export function apply(ctx, config = {}) {
   };
   // Settings are re-read per push so a base URL / keychain change applies without restarting DSH.
   const push = async notification => sendViaBarkPush({
-    title: `${notification.machine_label}｜${notification.session_title}`,
+    title: notificationTitle(notification.session_title, notification.machine_label),
     body: notification.reply_preview,
     sound: notification.sound,
     group: 'dsh',
@@ -283,7 +286,7 @@ export function apply(ctx, config = {}) {
         result.then(outcome => ({ outcome }), () => ({ outcome: 'unavailable' })).then(({ outcome }) => readLocalSettings(root)).then(local => {
           if (local.notify_answered === false) return;
           const tool = typeof req?.tool === 'string' && req.tool !== '' ? req.tool : 'tool';
-          notifyDesktop(`${machineLabel(local)}｜审批已处理`, `${tool} → ${String(outcome)}`, 'Pop');
+          notifyDesktop(notificationTitle('审批已处理', machineLabel(local)), `${tool} → ${String(outcome)}`, 'Pop');
         }).catch(() => {});
       }
     } catch { /* listening must never affect the approval flow */ }

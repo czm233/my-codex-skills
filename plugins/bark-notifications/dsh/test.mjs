@@ -3,7 +3,7 @@ import assert from 'node:assert/strict';
 import { mkdtemp, rm } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
-import { createHandler,apply,replyPreview,normalizeText,approvalNotification,resolveBarkConfig,barkPushUrl,normalizeBaseUrl,BARK_DEFAULTS,BARK_PUSH_URL,sendViaBarkPush,readKeychainKey,inspectBarkConfig,formatBarkConfig } from './index.mjs';
+import { notificationTitle,machineLabel,createHandler,apply,replyPreview,normalizeText,approvalNotification,resolveBarkConfig,barkPushUrl,normalizeBaseUrl,BARK_DEFAULTS,BARK_PUSH_URL,sendViaBarkPush,readKeychainKey,inspectBarkConfig,formatBarkConfig } from './index.mjs';
 test('dedup, subagent exclusion, failure containment, no content access', async()=>{
  const root=await mkdtemp(join(tmpdir(),'dsh-bark-test-')); let calls=0;const records=[];
  try {
@@ -31,7 +31,7 @@ test('registers turn-stopping and approval/request listeners without calling sen
 
 test('approval notification folding and passthrough',()=>{
  const n=approvalNotification({tool:'bash',reason:'  multi\nline   reason  '},{machine_label:'CZM-Mac'});
- assert.equal(n.title,'CZM-Mac｜等待审批');
+ assert.equal(n.title,'等待审批｜CZM-Mac');
  assert.equal(n.body,'bash：multi line reason');
  assert.equal(n.group,'dsh-approval');
  assert.equal(n.level,'timeSensitive');
@@ -157,4 +157,18 @@ test('inspect config is redacted and reports the source',async()=>{
     const d3=await inspectBarkConfig({config:{bark:{baseUrl:'http://cfg:1'}},root});
     assert.equal(d3.pushUrl,'http://cfg:1/push');assert.equal(d3.baseUrlSource,'config');
   }finally{await rm(root,{recursive:true,force:true})}
+});
+
+test('all machine labels keep title first with the same full-width pipe',()=>{
+ for(const label of ['Office PC','开发电脑','工作站 😀','Long machine label']){
+  const machine=machineLabel({machine_label:label});
+  assert.equal(notificationTitle('任务完成',machine),`任务完成｜${machine}`);
+  assert.equal(approvalNotification({tool:'test'},{machine_label:label}).title,`等待审批｜${machine}`);
+ }
+ assert.equal(notificationTitle('任务完成',machineLabel({})).startsWith('任务完成｜'),true);
+});
+test('Windows sender uses title then full-width pipe without depending on script encoding',async()=>{
+ const {readFileSync}=await import('node:fs');
+ const script=readFileSync(new URL('./send.ps1',import.meta.url),'utf8');
+ assert.ok(script.includes("title=($n.session_title+[char]0xFF5C+$n.machine_label)"));
 });

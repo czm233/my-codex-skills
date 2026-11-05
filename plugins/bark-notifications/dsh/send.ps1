@@ -14,7 +14,7 @@ try {
     $n = [Console]::In.ReadToEnd() | ConvertFrom-Json
     if (-not $n.session_title -or -not $n.reply_preview) { throw 'missing_notification' }
     $phase = 'send'
-    $payload = @{device_key=$key;title=($n.session_title+' · '+$n.machine_label);body=$n.reply_preview;sound=$n.sound;level='active';group=('codex-task-status:'+$n.machine_label)} | ConvertTo-Json -Compress
+    $payload = @{device_key=$key;title=($n.session_title+[char]0xFF5C+$n.machine_label);body=$n.reply_preview;sound=$n.sound;level='active';group=('codex-task-status:'+$n.machine_label)} | ConvertTo-Json -Compress
     [Net.ServicePointManager]::SecurityProtocol = [Net.SecurityProtocolType]::Tls12
     $r = Invoke-WebRequest -Uri 'https://api.day.app/push' -Method Post -ContentType 'application/json; charset=utf-8' -Body ([Text.Encoding]::UTF8.GetBytes($payload)) -TimeoutSec 8 -UseBasicParsing
     $json = $r.Content | ConvertFrom-Json

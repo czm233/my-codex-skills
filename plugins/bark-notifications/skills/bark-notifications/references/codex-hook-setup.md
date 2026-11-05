@@ -1,6 +1,6 @@
 # Codex Stop Hook 配置指南
 
-本文记录如何在任意 macOS 电脑上安装用户级 `bark-notifications` 插件。插件启用并信任后，每次 Codex 用户可见主线程结束一个回合时发送一次 Bark 通知：标题为“当前 Session 的用户可见标题 · 原机器名称”，正文为最后一条回复的前 30 个字符，截断时追加省略号。同一个 `session_id + turn_id` 只发送一次，Codex Desktop 为界面功能启动的内部临时 turn 不发送。插件停用或卸载后，插件 Hook 不再加载。
+本文记录如何在任意 macOS 电脑上安装用户级 `bark-notifications` 插件。插件启用并信任后，每次 Codex 用户可见主线程结束一个回合时发送一次 Bark 通知：标题为“当前 Session 的用户可见标题｜原机器名称”，正文为最后一条回复的前 30 个字符，截断时追加省略号。同一个 `session_id + turn_id` 只发送一次，Codex Desktop 为界面功能启动的内部临时 turn 不发送。插件停用或卸载后，插件 Hook 不再加载。
 
 ## 先理解组成部分
 
@@ -98,7 +98,7 @@ SKILL_HOME="$PLUGIN_ROOT/skills/bark-notifications"
 
 如果已有配置，命令会拒绝静默覆盖不同标签；用户明确要求更换时才追加 `--force`。配置文件权限由命令设置为仅当前用户可读写。
 
-通知标题使用“Session 标题 · 原机器名称”，正文使用回复前 30 个字符。机器标签同时用于 Bark 分组：
+通知标题使用“Session 标题｜原机器名称”，正文使用回复前 30 个字符。机器标签同时用于 Bark 分组：
 
 ```text
 MacBook Air
@@ -184,7 +184,7 @@ printf '%s' '{"hook_event_name":"Stop","session_id":"internal-session","turn_id"
 
 1. 完成一个很小的 Codex 回合。
 2. 确认 Stop Hook 状态消息出现。
-3. 检查 iPhone 是否收到标题为“当前 Session 标题 · 原机器名称”、正文为回复前 30 个字符的通知；若 Session 尚未命名或标题读取失败，则应无通知。
+3. 检查 iPhone 是否收到标题为“当前 Session 标题｜原机器名称”、正文为回复前 30 个字符的通知；若 Session 尚未命名或标题读取失败，则应无通知。
 4. 只记录脱敏后的 HTTP 状态和耗时，不记录 Key、请求 URL 或对话内容。
 
 HTTP 200 只表示 Bark 接受了请求，不代表 APNs 一定已经在手机上显示；还要检查锁屏通知、横幅、声音和 Focus 设置。
