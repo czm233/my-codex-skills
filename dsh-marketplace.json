@@ -17,12 +17,12 @@
       },
       "versions": [
         {
-          "version": "0.4.3",
-          "publishTimestamp": 1793862301,
+          "version": "0.4.4",
+          "publishTimestamp": 1793867972,
           "source": {
             "type": "git",
             "url": "https://github.com/czm233/my-codex-skills",
-            "commit": "0f1235e88b523a203e415337839c133d782329ab",
+            "commit": "3c88aa3e4f334d5bee5cc9735610253793f3273b",
             "path": "plugins/bark-notifications"
           }
         }
