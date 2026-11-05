@@ -136,15 +136,16 @@ async function bodyMentionsDeviceToken(res) {
 /**
  * POST one Bark push. Resolves {status, http_status?}; never rejects, never exposes the key.
  * With no bark overrides the request is byte-for-byte the historical one (BARK_PUSH_URL + default keychain entry).
+ * Callers pass only the title; the device name from configuration is appended here.
  */
-export async function sendViaBarkPush({ title, body, sound, group = 'dsh', level = 'active', url, bark }) {
+export async function sendViaBarkPush({ title, body, sound, group = 'dsh', level = 'active', url, bark, deviceName }) {
   let target;
   try {
     target = bark ? resolveBarkConfig({}, bark) : BARK_DEFAULTS;
     const pushUrl = normalizeBaseUrl(target.baseUrl) === BARK_BASE_URL ? BARK_PUSH_URL : barkPushUrl(target.baseUrl);
     const device_key = await readKeychainKey(target.keychainService, target.keychainAccount);
     if (!device_key) return { status: 'credential_unavailable' };
-    const payload = { device_key, title, body, group, level };
+    const payload = { device_key, title: composeTitle(title, normalizeText(deviceName, MAX_DEVICE_NAME_INPUT_CHARS) || machineLabel({})), body, group, level };
     if (sound) payload.sound = sound;
     if (url) payload.url = url;
     const res = await fetch(pushUrl, {
@@ -172,8 +173,34 @@ export function notifyDesktop(title, body, sound = 'Glass') {
 export async function readLocalSettings(root) {
   try { const v = JSON.parse(await readFile(join(root, 'settings.json'), 'utf8')); return v && typeof v === 'object' ? v : {}; } catch { return {}; }
 }
+export const TITLE_SEPARATOR = '｜';
+/** The phone reads at most 60 characters before replacing the separator, so a long device name is cut off with it. */
+export const MAX_DEVICE_NAME_CHARS = 6;
+export const MAX_DEVICE_NAME_INPUT_CHARS = 24;
 export function notificationTitle(title, machine) {
   return `${title}｜${machine}`;
+}
+/**
+ * Device name comes from configuration only (`deviceName` in the plugin config or settings.json),
+ * never from a caller argument. The plugin config is explicit and local to this computer, so a
+ * normalized settings.json value is preferred over it; anything missing or invalid falls back to hostname.
+ */
+export function resolveDeviceName(config = {}, local = {}) {
+  const plugin = config?.bark && typeof config.bark === 'object' ? config.bark : {};
+  const configured = normalizeText(plugin.deviceName ?? config?.deviceName, MAX_DEVICE_NAME_INPUT_CHARS);
+  if (configured !== '') return { value: configured, source: 'config' };
+  const localDevice = normalizeText(local.bark_device_name, MAX_DEVICE_NAME_INPUT_CHARS);
+  if (localDevice !== '') return { value: localDevice, source: 'settings' };
+  return { value: machineLabel(local), source: local.machine_label ? 'settings' : 'default' };
+}
+/**
+ * Final title as the phone sees it: `title｜device`. A title that already contains the separator is
+ * sent as-is, so the device name is never appended twice; callers pass the bare title.
+ */
+export function composeTitle(title, deviceName) {
+  const text = typeof title === 'string' ? title : '';
+  if (text.includes(TITLE_SEPARATOR)) return text;
+  return notificationTitle(text, deviceName);
 }
 export function machineLabel(local) {
   return normalizeText(local.machine_label || hostname(), 24).replace(/\[/g,'(').replace(/\]/g,')') || 'Mac';
@@ -188,7 +215,7 @@ export function approvalNotification(req, local = {}) {
     : typeof req?.reason === 'string' ? req.reason : '';
   const reason = normalizeText(raw, 160);
   return {
-    title: notificationTitle('等待审批', machineLabel(local)),
+    title: '等待审批',
     body: reason === '' ? `工具 ${tool} 正在等待你的批准` : `${tool}：${reason}`,
     sound: validSound(local, 'bell'),
     group: 'dsh-approval',
@@ -200,13 +227,15 @@ export async function inspectBarkConfig({ config = {}, root = stateRoot() } = {}
   const local = await readLocalSettings(root);
   const resolved = resolveBarkConfig(config, local);
   const keychainKeyPresent = (await readKeychainKey(resolved.keychainService, resolved.keychainAccount)) !== null;
-  return { ...resolved, pushUrl: barkPushUrl(resolved.baseUrl), keychainKeyPresent, settingsFile: join(root, 'settings.json') };
+  const device = resolveDeviceName(config, local);
+  return { ...resolved, pushUrl: barkPushUrl(resolved.baseUrl), keychainKeyPresent, deviceName: device.value, deviceNameSource: device.source, settingsFile: join(root, 'settings.json') };
 }
 export function formatBarkConfig(report) {
   return [
     `push url  : ${report.pushUrl}`,
     `base url  : ${report.baseUrl} (${report.baseUrlSource})`,
     `keychain  : service=${report.keychainService} (${report.keychainServiceSource}) account=${report.keychainAccount} (${report.keychainAccountSource})`,
+    `device name: ${report.deviceName} (${report.deviceNameSource})`,
     `device key: ${report.keychainKeyPresent ? 'present in keychain' : 'missing'}`,
     `settings  : ${report.settingsFile}`,
   ].join('\n');
@@ -263,14 +292,19 @@ export function apply(ctx, config = {}) {
     const local = await readLocalSettings(root);
     return {session_title:title,reply_preview:reply.preview,machine_label:machineLabel(local),sound:validSound(local,'bell_quiet')};
   };
-  // Settings are re-read per push so a base URL / keychain change applies without restarting DSH.
-  const push = async notification => sendViaBarkPush({
-    title: notificationTitle(notification.session_title, notification.machine_label),
-    body: notification.reply_preview,
-    sound: notification.sound,
-    group: 'dsh',
-    bark: resolveBarkConfig(config, await readLocalSettings(root)),
-  });
+  // Settings are re-read per push so a base URL / keychain / device-name change applies without restarting DSH.
+  const push = async notification => {
+    const local = await readLocalSettings(root);
+    const device = resolveDeviceName(config, local);
+    return sendViaBarkPush({
+      title: notification.session_title,
+      body: notification.reply_preview,
+      sound: notification.sound,
+      group: 'dsh',
+      bark: resolveBarkConfig(config, local),
+      deviceName: device.value,
+    });
+  };
   ctx.on('agent/turn-stopping', createHandler({stateDir:join(root,'dedup'),send:push,diagnostic,enabled:config.enabled!==false,getNotification}));
   // Approval waiting: listen-only on the approval/request waterfall — notify, then pass through untouched.
   ctx.on('approval/request', (req, next) => {
@@ -278,15 +312,17 @@ export function apply(ctx, config = {}) {
       readLocalSettings(root).then(local => {
         if (local.desktop === false) return;
         const n = approvalNotification(req, local);
-        notifyDesktop(n.title, n.body, 'Glass');
-        return sendViaBarkPush({ ...n, bark: resolveBarkConfig(config, local) });
+        const device = resolveDeviceName(config, local);
+        notifyDesktop(composeTitle(n.title, device.value), n.body, 'Glass');
+        return sendViaBarkPush({ ...n, bark: resolveBarkConfig(config, local), deviceName: device.value });
       }).catch(() => {});
       const result = next();
       if (result && typeof result.then === 'function') {
         result.then(outcome => ({ outcome }), () => ({ outcome: 'unavailable' })).then(({ outcome }) => readLocalSettings(root)).then(local => {
           if (local.notify_answered === false) return;
           const tool = typeof req?.tool === 'string' && req.tool !== '' ? req.tool : 'tool';
-          notifyDesktop(notificationTitle('审批已处理', machineLabel(local)), `${tool} → ${String(outcome)}`, 'Pop');
+          const device = resolveDeviceName(config, local);
+          notifyDesktop(composeTitle('审批已处理', device.value), `${tool} → ${String(outcome)}`, 'Pop');
         }).catch(() => {});
       }
     } catch { /* listening must never affect the approval flow */ }

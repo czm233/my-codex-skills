@@ -19,6 +19,7 @@ BARK_BASE_URL = "https://api.day.app"
 BARK_ENDPOINT = BARK_BASE_URL + "/push"
 BARK_GROUP_PREFIX = "codex-task-status"
 DEFAULT_MACHINE_LABEL = "Mac"
+TITLE_SEPARATOR = "\uff5c"  # full-width vertical bar, spelled as an escape to survive transcript encoding
 MACHINE_CONFIG_FILENAME = "bark-notifications.json"
 MACHINE_LABEL_ENV = "CODEX_BARK_MACHINE_LABEL"
 MAX_MACHINE_LABEL_CHARS = 24
@@ -81,17 +82,26 @@ def normalize_reply_preview(raw: object) -> str:
     return text[:30] + ("…" if len(text) > 30 else "")
 
 
-def _read_configured_machine_label() -> str | None:
+def _read_local_config() -> dict:
     config_path = _codex_home() / MACHINE_CONFIG_FILENAME
     try:
         with config_path.open("r", encoding="utf-8") as config_file:
             config = json.load(config_file)
     except (OSError, ValueError, TypeError):
-        return None
+        return {}
+    return config if isinstance(config, dict) else {}
 
-    if not isinstance(config, dict):
-        return None
-    return normalize_machine_label(config.get("machine_label"))
+
+def _read_configured_device_name() -> str | None:
+    """`device_name` is the configured name the phone shows; `machine_label` remains the older key."""
+    config = _read_local_config()
+    return normalize_machine_label(config.get("device_name")) or normalize_machine_label(
+        config.get("machine_label")
+    )
+
+
+def _read_configured_machine_label() -> str | None:
+    return _read_configured_device_name()
 
 
 def normalize_base_url(raw: object) -> str | None:
@@ -241,6 +251,13 @@ def format_notification_group(machine_label: str) -> str:
     return f"{BARK_GROUP_PREFIX}:{machine_label}"[:64]
 
 
+def compose_title(title: str, device_name: str) -> str:
+    """Title then the separator then the device name; a title that already has it is never doubled."""
+    if TITLE_SEPARATOR in title:
+        return title
+    return f"{title}{TITLE_SEPARATOR}{device_name}"
+
+
 def main() -> int:
     parsed_arguments = parse_arguments()
     if parsed_arguments is None:
@@ -256,7 +273,7 @@ def main() -> int:
         notification = None
     if isinstance(notification, dict):
         session_title = normalize_session_title(notification.get("session_title"))
-        title = f"{session_title}｜{machine_label}"
+        title = compose_title(session_title, machine_label)
         body = normalize_reply_preview(notification.get("reply_preview"))
         if not body:
             emit("status=skipped category=missing-reply-preview")
@@ -264,7 +281,7 @@ def main() -> int:
     else:
         # Preserve compatibility for explicit legacy standalone calls.
         body = normalize_session_title(raw_input)
-        title = f"{body}｜{machine_label}"
+        title = compose_title(body, machine_label)
 
     if dry_run:
         emit(f"status=dry-run event={event_name} sent=false")

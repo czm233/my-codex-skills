@@ -1,4 +1,4 @@
-﻿$ErrorActionPreference = 'Stop'
+$ErrorActionPreference = 'Stop'
 $ProgressPreference = 'SilentlyContinue'
 [Console]::OutputEncoding = [Text.Encoding]::UTF8
 [Console]::InputEncoding = New-Object Text.UTF8Encoding($false)
@@ -14,7 +14,10 @@ try {
     $n = [Console]::In.ReadToEnd() | ConvertFrom-Json
     if (-not $n.session_title -or -not $n.reply_preview) { throw 'missing_notification' }
     $phase = 'send'
-    $payload = @{device_key=$key;title=($n.session_title+[char]0xFF5C+$n.machine_label);body=$n.reply_preview;sound=$n.sound;level='active';group=('codex-task-status:'+$n.machine_label)} | ConvertTo-Json -Compress
+    # The title already carries `｜device`; never append it twice.
+    $pipe = [string][char]0xFF5C
+    $title = if ([string]$n.session_title -like ('*' + $pipe + '*')) { [string]$n.session_title } else { [string]$n.session_title + $pipe + [string]$n.machine_label }
+    $payload = @{device_key=$key;title=$title;body=$n.reply_preview;sound=$n.sound;level='active';group=('codex-task-status:'+$n.machine_label)} | ConvertTo-Json -Compress
     [Net.ServicePointManager]::SecurityProtocol = [Net.SecurityProtocolType]::Tls12
     $r = Invoke-WebRequest -Uri 'https://api.day.app/push' -Method Post -ContentType 'application/json; charset=utf-8' -Body ([Text.Encoding]::UTF8.GetBytes($payload)) -TimeoutSec 8 -UseBasicParsing
     $json = $r.Content | ConvertFrom-Json

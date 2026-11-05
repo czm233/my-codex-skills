@@ -71,7 +71,7 @@ account: codex
 发送器按以下顺序解析机器标签：
 
 1. 环境变量 `CODEX_BARK_MACHINE_LABEL`（适合企业批量部署或临时覆盖）。
-2. `${CODEX_HOME:-$HOME/.codex}/bark-notifications.json` 中的 `machine_label`。
+2. `${CODEX_HOME:-$HOME/.codex}/bark-notifications.json` 中的 `device_name`，其次 `machine_label`（旧键，继续兼容）。
 3. macOS `ComputerName`。
 4. `hostname -s`。
 5. `Mac`。
@@ -81,11 +81,13 @@ account: codex
 ```json
 {
   "version": 1,
-  "machine_label": "<用户确认的短标签>"
+  "device_name": "<用户确认的短标签>"
 }
 ```
 
-机器标签应控制在 24 个字符以内，避免换行和控制字符。安装 Agent 应先读取当前 `ComputerName` 作为建议值，再让用户确认或改成更短的标签；不要把未确认的真实电脑名称写入仓库。
+设备名要简短：手机只朗读标题前 60 字，设备名会跟标题共用这个额度，建议不超过 6 个字。技术上限制 24 个字符以内，避免换行和控制字符。安装 Agent 应先读取当前 `ComputerName` 作为建议值，再让用户确认或改成更短的标签；不要把未确认的真实电脑名称写入仓库。
+
+设备名只从上述配置读取，**不是调用参数**：调用本 Skill 或发送器的 Agent 只传标题，设备名由发送器在标题后追加为“标题｜设备名”；标题里已经含 `｜` 时原样发送，不会拼接第二次。配置缺失时回退到 macOS 电脑名称，发送照常进行。
 
 使用 Skill 自带命令写入配置：
 

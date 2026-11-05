@@ -9,7 +9,25 @@
 - **审批等待**：旁听 `approval/request` 事件瀑布——只发通知后原样 `next()` 透传，不回答、不拦截，任何失败都被吞掉，不影响审批主流程。桌面横幅（osascript）+ Bark 推送（`level=timeSensitive`）；审批处理后补发一条结果通知。
 - **回合结束**：与 Windows 相同的 turn-stopping Hook，经 `POST https://api.day.app/push` 发送。
 
-凭证：Bark device key 从登录钥匙串读取（service `codex-bark-notifications`、account `codex`），不经命令参数、仓库、日志或聊天；缺失时状态记为 `credential_unavailable`。本地配置 `~/Library/Application Support/DSHBark/settings.json` 仅存非敏感项：`machine_label`、`sound`、`desktop`（false 关桌面横幅）、`notify_answered`（false 关结果通知）。
+凭证：Bark device key 从登录钥匙串读取（service `codex-bark-notifications`、account `codex`），不经命令参数、仓库、日志或聊天；缺失时状态记为 `credential_unavailable`。本地配置 `~/Library/Application Support/DSHBark/settings.json` 仅存非敏感项：`bark_device_name`、`machine_label`、`sound`、`desktop`（false 关桌面横幅）、`notify_answered`（false 关结果通知）。
+
+### 设备名（0.4.4 起）
+
+设备名只从配置读，**不是调用参数**：调用方只传标题（正文可选），插件在发送前拼上 `标题｜设备名`。
+
+| 配置项 | 插件配置 | settings.json | 说明 |
+| --- | --- | --- | --- |
+| 设备名 | `bark: { deviceName }`（顶层 `deviceName` 也接受） | `bark_device_name` | 简短为好，建议 ≤ 6 字：手机只朗读标题前 60 字，会连设备名一起截断 |
+
+优先级：**插件配置 > settings.json 的 `bark_device_name` > 回落**。回落依次用 settings.json 的 `machine_label`、本机计算机名；都取不到用 `Mac`，配置缺失不会导致发送失败。改 settings.json 下一次推送即生效；改插件配置需重启 DSH。
+
+拼接规则：标题里已经含 `｜` 时原样发送，不会叠加第二次。正文只用于通知列表展示，不参与朗读。
+
+自检会显示实际生效的设备名及其来源（不输出 key）：
+
+```sh
+node -e "import('dsh/index.mjs').then(async m=>console.log(m.formatBarkConfig(await m.inspectBarkConfig())))"
+```
 
 ### 服务器地址与钥匙串条目（0.4.2 起可配置）
 
@@ -53,17 +71,17 @@ Codex 入口（`skills/bark-notifications/bin/bark-task-complete`）读的是 `~
 
 这些文件独立于插件安装目录，更新时保持不变：
 
-- `%LOCALAPPDATA%\DSHBark\settings.json`：`machine_label`、`sound`。
+- `%LOCALAPPDATA%\DSHBark\settings.json`：`bark_device_name`（设备名）、`machine_label`（回退用）、`sound`。
 - `%LOCALAPPDATA%\DSHBark\device-key.dpapi`：Windows 当前用户 DPAPI 加密凭证；不能复制给另一 Windows 用户使用。
 - 同目录的 `dedup` 与 `diagnostics.jsonl`：去重记录和不包含通知内容的诊断。
 
 配置示例（仅示例值）：
 
 ```json
-{"machine_label":"My Windows","sound":"bell_quiet"}
+{"bark_device_name":"MyPC","machine_label":"My Windows","sound":"bell_quiet"}
 ```
 
-标题为会话标题加机器标签，正文为当前回复最多 30 个字符的预览。机器标签缺省使用 Windows 计算机名；铃声缺省 `bell_quiet`。不会读取会话历史；标题或预览缺失时跳过；发送失败不重试、不影响任务。
+标题为会话标题加设备名（`bark_device_name`，缺省回退 `machine_label` 或 Windows 计算机名），正文为当前回复最多 30 个字符的预览。铃声缺省 `bell_quiet`。不会读取会话历史；标题或预览缺失时跳过；发送失败不重试、不影响任务。
 
 首次配置凭证应通过安全输入在目标 Windows 用户上下文中使用 DPAPI 加密，并限制文件 ACL；不要将明文放进命令参数、仓库、日志或聊天。现有设备迁移无需重新读取或搬运凭证。
 
@@ -97,4 +115,4 @@ codex plugin add bark-notifications@my-codex-skills
 
 ## 通知标题格式
 
-所有发送入口（Codex / ZCode、DSH macOS / Windows、审批提示）统一使用 `标题｜电脑`，分隔符固定为全角竖杠 U+FF5C，两侧不加空格。电脑名称仍从本机配置或现有环境回退解析，本次不缩写、不增加机型名单，也不改正文、分组或发送目标。缺省标题的独立旧调用使用既有安全回退标题。
+所有发送入口（Codex / ZCode、DSH macOS / Windows、审批提示）统一使用 `标题｜设备名`，分隔符固定为全角竖杠 U+FF5C，两侧不加空格。设备名由配置提供（见上文「设备名」一节），调用方不传设备名；标题里已含 `｜` 时不再拼接。正文、分组与发送目标不受影响。缺省标题的独立旧调用使用既有安全回退标题。

@@ -3,7 +3,7 @@ import assert from 'node:assert/strict';
 import { mkdtemp, rm } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
-import { notificationTitle,machineLabel,createHandler,apply,replyPreview,normalizeText,approvalNotification,resolveBarkConfig,barkPushUrl,normalizeBaseUrl,BARK_DEFAULTS,BARK_PUSH_URL,sendViaBarkPush,readKeychainKey,inspectBarkConfig,formatBarkConfig } from './index.mjs';
+import { notificationTitle,machineLabel,createHandler,apply,replyPreview,normalizeText,approvalNotification,resolveBarkConfig,barkPushUrl,normalizeBaseUrl,BARK_DEFAULTS,BARK_PUSH_URL,sendViaBarkPush,readKeychainKey,inspectBarkConfig,formatBarkConfig,composeTitle,resolveDeviceName,MAX_DEVICE_NAME_CHARS } from './index.mjs';
 test('dedup, subagent exclusion, failure containment, no content access', async()=>{
  const root=await mkdtemp(join(tmpdir(),'dsh-bark-test-')); let calls=0;const records=[];
  try {
@@ -31,7 +31,7 @@ test('registers turn-stopping and approval/request listeners without calling sen
 
 test('approval notification folding and passthrough',()=>{
  const n=approvalNotification({tool:'bash',reason:'  multi\nline   reason  '},{machine_label:'CZM-Mac'});
- assert.equal(n.title,'等待审批｜CZM-Mac');
+ assert.equal(n.title,'等待审批'); // the device name is appended by composeTitle at send time
  assert.equal(n.body,'bash：multi line reason');
  assert.equal(n.group,'dsh-approval');
  assert.equal(n.level,'timeSensitive');
@@ -163,12 +163,49 @@ test('all machine labels keep title first with the same full-width pipe',()=>{
  for(const label of ['Office PC','开发电脑','工作站 😀','Long machine label']){
   const machine=machineLabel({machine_label:label});
   assert.equal(notificationTitle('任务完成',machine),`任务完成｜${machine}`);
-  assert.equal(approvalNotification({tool:'test'},{machine_label:label}).title,`等待审批｜${machine}`);
+  assert.equal(composeTitle(approvalNotification({tool:'test'},{machine_label:label}).title,machine),`等待审批｜${machine}`);
  }
  assert.equal(notificationTitle('任务完成',machineLabel({})).startsWith('任务完成｜'),true);
 });
 test('Windows sender uses title then full-width pipe without depending on script encoding',async()=>{
  const {readFileSync}=await import('node:fs');
  const script=readFileSync(new URL('./send.ps1',import.meta.url),'utf8');
- assert.ok(script.includes("title=($n.session_title+[char]0xFF5C+$n.machine_label)"));
+ assert.ok(script.includes("[string][char]0xFF5C")); // pipe built from its code point, independent of script encoding
+ assert.match(script,/-like \('\*' \+ \$pipe \+ '\*'\)/); // a title that already has the pipe is left alone
+});
+
+// --- Device name is configuration, never a caller argument ---
+test('device name comes from config, then settings, then the machine-name fallback',()=>{
+ assert.deepEqual(resolveDeviceName({bark:{deviceName:'MacBook'}},{bark_device_name:'Other',machine_label:'CZM-Mac'}),{value:'MacBook',source:'config'});
+ assert.deepEqual(resolveDeviceName({deviceName:'HOMEPC'},{}),{value:'HOMEPC',source:'config'}); // top-level key accepted too
+ assert.deepEqual(resolveDeviceName({}, {bark_device_name:'HOMEPC',machine_label:'CZM-Mac'}),{value:'HOMEPC',source:'settings'});
+ assert.deepEqual(resolveDeviceName({}, {machine_label:'CZM-Mac'}),{value:'CZM-Mac',source:'settings'});
+ const fallback=resolveDeviceName({},{});
+ assert.equal(fallback.source,'default');
+ assert.ok(fallback.value.length>0); // hostname: a missing config never blocks sending
+ assert.equal(resolveDeviceName({bark:{deviceName:'  \n  '}},{machine_label:'CZM-Mac'}).value,'CZM-Mac'); // blank config falls through
+});
+
+test('title is composed once: bare title gets the device, an existing pipe is never doubled',()=>{
+ assert.equal(composeTitle('构建完成','MacBook'),'构建完成｜MacBook');
+ assert.equal(composeTitle('构建完成｜MacBook','MacBook'),'构建完成｜MacBook');
+ assert.equal(composeTitle('构建完成｜旧设备','MacBook'),'构建完成｜旧设备');
+ // the phone reads at most 60 characters of title + separator + device name together
+ assert.ok(Array.from('构建完成｜MacBook').length<=60);
+ assert.equal(MAX_DEVICE_NAME_CHARS,6);
+});
+
+test('sender appends the configured device name to the title it posts',async()=>{
+ if(!await readKeychainKey()) return;
+ // `bark` here is a local placeholder, not a real service URL: the request is mocked, never sent.
+ const bark={baseUrl:'https://PLACEHOLDER.example.com'};
+ await withFetch(async calls=>{
+  await sendViaBarkPush({title:'构建完成',body:'',deviceName:'MacBook',bark});
+  await sendViaBarkPush({title:'构建完成｜MacBook',body:'',deviceName:'MacBook',bark});
+  await sendViaBarkPush({title:'构建完成',body:''});
+  assert.equal(JSON.parse(calls[0].init.body).title,'构建完成｜MacBook');
+  assert.equal(JSON.parse(calls[1].init.body).title,'构建完成｜MacBook');
+  assert.equal(JSON.parse(calls[2].init.body).title,`构建完成｜${machineLabel({})}`); // no device: hostname fallback
+  assert.equal(JSON.parse(calls[0].init.body).body,''); // body is display-only and may be empty
+ });
 });

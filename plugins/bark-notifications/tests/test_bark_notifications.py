@@ -112,6 +112,57 @@ class BarkPluginTests(unittest.TestCase):
         self.assertEqual(payloads[1]["group"], "codex-task-status:Mini")
         self.assertEqual(payloads[1]["sound"], "bell_quiet")
 
+    def test_configured_device_name_is_appended_once(self) -> None:
+        sender = load_module("bark_device_name_test", BIN_ROOT / "bark-task-complete")
+        payloads: list[dict[str, object]] = []
+
+        def fake_run(command: list[str], **kwargs: object) -> subprocess.CompletedProcess[bytes]:
+            if command[:2] == ["/usr/bin/security", "find-generic-password"]:
+                return subprocess.CompletedProcess(command, 0, stdout=b"placeholder")
+            if command and command[0] == "/usr/bin/curl":
+                payloads.append(json.loads(kwargs["input"].decode("utf-8")))
+                return subprocess.CompletedProcess(command, 0, stdout=b"status=200")
+            if command[0] in ("/usr/sbin/scutil", "/bin/hostname"):  # only reached without a configured name
+                return subprocess.CompletedProcess(command, 1, stdout=b"")
+            raise AssertionError(f"unexpected subprocess: {command}")
+
+        def send(title: str) -> None:
+            with (
+                mock.patch.object(sender.subprocess, "run", side_effect=fake_run),
+                mock.patch.object(sender.sys, "argv", ["bark-task-complete", "turn_stopped"]),
+                mock.patch.object(
+                    sender.sys,
+                    "stdin",
+                    io.StringIO(json.dumps({"session_title": title, "reply_preview": "正文"})),
+                ),
+            ):
+                self.assertEqual(sender.main(), 0)
+
+        with tempfile.TemporaryDirectory(prefix="bark-device-name-") as codex_home:
+            with mock.patch.dict(
+                os.environ, {"CODEX_HOME": codex_home, "CODEX_BARK_MACHINE_LABEL": ""}, clear=False
+            ):
+                config = Path(codex_home) / "bark-notifications.json"
+                # no configuration at all: the hostname-style fallback still sends
+                send("构建完成")
+                self.assertEqual(payloads[-1]["title"], f"构建完成{sender.TITLE_SEPARATOR}{sender.DEFAULT_MACHINE_LABEL}")
+                config.write_text(json.dumps({"device_name": "MacBook"}), encoding="utf-8")
+                send("构建完成")
+                send("构建完成｜MacBook")
+                send("构建完成｜旧设备")
+                config.write_text(json.dumps({"machine_label": "HOMEPC"}), encoding="utf-8")
+                send("构建完成")
+
+        self.assertEqual([payload["title"] for payload in payloads], [
+            f"构建完成{sender.TITLE_SEPARATOR}{sender.DEFAULT_MACHINE_LABEL}",
+            "构建完成｜MacBook",
+            "构建完成｜MacBook",
+            "构建完成｜旧设备",
+            "构建完成｜HOMEPC",
+        ])
+        self.assertEqual(payloads[1]["body"], "正文")
+        self.assertEqual(payloads[1]["group"], "codex-task-status:MacBook")
+
     def test_reply_preview_payload(self) -> None:
         sender = load_module("preview_sender", BIN_ROOT / "bark-task-complete")
         payloads = []
