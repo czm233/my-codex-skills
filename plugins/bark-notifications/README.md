@@ -7,9 +7,22 @@
 0.4.0 起同一 DSH bundle 在 macOS 上启用两条通知路径：
 
 - **审批等待**：旁听 `approval/request` 事件瀑布——只发通知后原样 `next()` 透传，不回答、不拦截，任何失败都被吞掉，不影响审批主流程。桌面横幅（osascript）+ Bark 推送（`level=timeSensitive`）；审批处理后补发一条结果通知。
-- **回合结束**：与 Windows 相同的 turn-stopping Hook，经 `POST https://api.day.app/push` 发送。
+- **会话停止**：turn-stopping Hook 只在会话真正停下时推送，经 `POST https://api.day.app/push` 发送。目标（goal）模式自动续轮、或还有排队回合时，本轮通知会先挂起，等目标完成/阻塞/暂停/轮次用尽、或队列清空后再发，不会每轮都响；普通单轮会话仍在回合结束时立即推送。
 
 凭证：Bark device key 从登录钥匙串读取（service `codex-bark-notifications`、account `codex`），不经命令参数、仓库、日志或聊天；缺失时状态记为 `credential_unavailable`。本地配置 `~/Library/Application Support/DSHBark/settings.json` 仅存非敏感项：`bark_device_name`、`machine_label`、`sound`、`desktop`（false 关桌面横幅）、`notify_answered`（false 关结果通知）。
+
+### 目标模式（0.4.5 起）
+
+目标（goal）模式会在同一会话里自动续轮：一轮结束只代表「这一轮做完了」，不代表任务停下。插件因此把通知延期到真正的停止点：
+
+| 回合结束时的状态 | 是否推送 |
+| --- | --- |
+| 无 goal、无排队回合 | 立即推送 |
+| goal 为 active 且 armed，轮次未用尽 | 不推送，挂起 |
+| goal 已完成 / 已暂停 / 已阻塞 / 轮次用尽 / 被 disarm（含 max-tokens） | 推送最近一次挂起的回合 |
+| 还有排队的人类回合 | 不推送，等队列清空 |
+
+挂起只保留最新一轮，不会补发中间每轮的旧回复。`goal/change` 或 `agent/status=idle` 时若任务确实停下，立即释放挂起通知；新回合开始则丢弃旧挂起。
 
 ### 设备名（0.4.4 起）
 
@@ -81,7 +94,7 @@ Codex 入口（`skills/bark-notifications/bin/bark-task-complete`）读的是 `~
 {"bark_device_name":"MyPC","machine_label":"My Windows","sound":"bell_quiet"}
 ```
 
-标题为会话标题加设备名（`bark_device_name`，缺省回退 `machine_label` 或 Windows 计算机名），正文为当前回复最多 30 个字符的预览。铃声缺省 `bell_quiet`。不会读取会话历史；标题或预览缺失时跳过；发送失败不重试、不影响任务。
+标题为会话标题加设备名（`bark_device_name`，缺省回退 `machine_label` 或 Windows 计算机名），正文为当前回复最多 30 个字符的预览。铃声缺省 `bell_quiet`。目标模式同样只在会话真正停下时推送（0.4.5 起），不会每轮都响。不会读取会话历史；标题或预览缺失时跳过；发送失败不重试、不影响任务。
 
 首次配置凭证应通过安全输入在目标 Windows 用户上下文中使用 DPAPI 加密，并限制文件 ACL；不要将明文放进命令参数、仓库、日志或聊天。现有设备迁移无需重新读取或搬运凭证。
 

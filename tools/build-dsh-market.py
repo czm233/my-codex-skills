@@ -27,7 +27,7 @@ index = {
     'plugins': [{
         'name': package['name'],
         'title': 'Bark Notifications',
-        'description': {'en': 'Bark notifications after each Harness turn.', 'zh': 'Harness 每轮回复结束后发送 Bark 通知。'},
+        'description': {'en': 'Bark notifications when a Harness session stops.', 'zh': 'Harness 会话真正停下后发送 Bark 通知（目标模式自动续轮不重复推送）。'},
         'repository': {'url': args.repository},
         'versions': [{
             'version': package['version'],

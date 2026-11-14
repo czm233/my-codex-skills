@@ -11,17 +11,39 @@ const here = dirname(fileURLToPath(import.meta.url));
 export function isChildSession(header) {
   return !!header && (header.origin === 'subagent' || header.parentSession != null);
 }
-export function createHandler({ stateDir, send, diagnostic = async () => {}, enabled = true, getNotification = async () => null }) {
+/**
+ * Whether an active, armed goal will start another round by itself. A goal that
+ * is complete/paused/blocked, disarmed, or has used up its round budget is a
+ * real stopping point, so the notification must go out.
+ */
+export function goalKeepsSessionRunning(goal) {
+  return !!goal && goal.phase === 'active' && goal.activation === 'armed'
+    && Number.isInteger(goal.roundsStarted) && Number.isInteger(goal.maxGoalRounds)
+    && goal.roundsStarted < goal.maxGoalRounds;
+}
+/** A queued human turn continues the driver loop without ever reporting idle. */
+export function hasQueuedTurn(agent) {
+  try { return (agent?.inbox?.nextTurn?.length ?? 0) > 0; } catch { return false; }
+}
+/** True when this turn is not the session's stopping point and must not notify yet. */
+export function notificationShouldWait(agent, goals) {
+  try { if (goalKeepsSessionRunning(goals?.get(agent))) return true; } catch { /* unknown goal state must not silence notifications */ }
+  return hasQueuedTurn(agent);
+}
+export function createHandler({ stateDir, send, diagnostic = async () => {}, enabled = true, getNotification = async () => null, shouldDefer = () => false }) {
   return async ({ agent, turn }) => {
     try {
       const h = agent?.session?.header;
-      if (!enabled || !h?.id || isChildSession(h) || !Number.isInteger(turn) || turn < 0) return;
+      if (!enabled || !h?.id || isChildSession(h) || !Number.isInteger(turn) || turn < 0) return 'skipped';
       const notification = await getNotification(agent, turn);
-      if (!notification?.session_title || !notification?.reply_preview) return;
+      if (!notification?.session_title || !notification?.reply_preview) return 'skipped';
+      let deferred = false;
+      try { deferred = shouldDefer(agent, turn) === true; } catch { /* a broken predicate must not silence notifications */ }
+      if (deferred) return 'deferred';
       const hash = createHash('sha256').update(JSON.stringify([h.id, turn])).digest('hex');
       await mkdir(stateDir, { recursive: true });
       try { const f = await open(join(stateDir, hash), 'wx'); await f.close(); }
-      catch (e) { if(e.code === 'EEXIST') return; throw e; }
+      catch (e) { if(e.code === 'EEXIST') return 'duplicate'; throw e; }
       let result;
       try { result = await send(notification); } catch { result = { status: 'send_failed' }; }
       await diagnostic({ time: new Date().toISOString(), event: hash, status: result.status, http_status: result.http_status });
@@ -31,7 +53,45 @@ export function createHandler({ stateDir, send, diagnostic = async () => {}, ena
         entries.sort((a,b) => b.time-a.time);
         await Promise.all(entries.slice(1500).map(e => unlink(join(stateDir,e.name))));
       }
-    } catch { /* Never interfere with the agent or retry a failed notification. */ }
+      return 'delivered';
+    } catch { /* Never interfere with the agent or retry a failed notification. */ return 'error'; }
+  };
+}
+/**
+ * Bridge turn-stopping hooks to a single "the session really stopped" delivery:
+ * a turn that an active goal or a queued turn will continue is held, and the
+ * most recent held turn is released once the goal finishes, is paused/blocked,
+ * is disarmed, or the agent otherwise becomes idle for good.
+ */
+export function createStopNotifier({ deliver, shouldDefer }) {
+  const pending = new WeakMap();
+  const flushing = new WeakSet();
+  const defer = agent => {
+    try { return shouldDefer(agent) === true; } catch { return false; /* never silence on a broken predicate */ }
+  };
+  const flush = async agent => {
+    const record = pending.get(agent?.session);
+    if (!record || record.agent !== agent || agent.status !== 'idle' || flushing.has(agent)) return 'skipped';
+    if (defer(agent)) return 'skipped';
+    flushing.add(agent);
+    try {
+      const outcome = await deliver({ agent, turn: record.turn });
+      if (outcome !== 'deferred' && pending.get(agent.session) === record) pending.delete(agent.session);
+      return outcome;
+    } finally { flushing.delete(agent); }
+  };
+  return {
+    async turnStopping(event) {
+      // A newer turn supersedes any held earlier turn even if its turn/start
+      // notification was missed during plugin (re)load.
+      if (event?.agent?.session) pending.delete(event.agent.session);
+      const outcome = await deliver(event);
+      if (outcome === 'deferred' && event?.agent?.session) pending.set(event.agent.session, { agent: event.agent, turn: event.turn });
+      return outcome;
+    },
+    async idle(agent) { return flush(agent); },
+    async goalChanged(agent) { return flush(agent); },
+    turnStarted(session) { pending.delete(session); },
   };
 }
 export function sendViaPowerShell(notification) {
@@ -245,6 +305,23 @@ export function formatBarkConfig(report) {
 }
 export function apply(ctx, config = {}) {
   const root = stateRoot();
+  // Read the optional goal service per notification: plugin composition order
+  // must not decide whether goal rounds can be detected.
+  const shouldDefer = agent => {
+    let goals;
+    try { goals = typeof ctx.get === 'function' ? ctx.get('goals') : undefined; } catch { goals = undefined; }
+    return notificationShouldWait(agent, goals);
+  };
+  /** Hold turn stopping until the goal/queued work stops continuing this session. */
+  const registerStopNotifier = ({ send, getNotification, diagnostic }) => {
+    const deliver = createHandler({stateDir:join(root,'dedup'),send,diagnostic,enabled:config.enabled!==false,getNotification,shouldDefer});
+    const notifier = createStopNotifier({deliver,shouldDefer});
+    ctx.on('agent/turn-stopping', event => { notifier.turnStopping(event).catch(() => {}); });
+    ctx.on('agent/status', event => { if (event?.status === 'idle') notifier.idle(event.agent).catch(() => {}); });
+    ctx.on('goal/changed', event => { notifier.goalChanged(event.agent).catch(() => {}); });
+    ctx.on('session/event', (session,event) => { if (event.type === 'turn/start') notifier.turnStarted(session); });
+    return notifier;
+  };
   if (process.platform === 'win32') {
     const replies = new WeakMap();
     ctx.on('session/event', (session,event) => {
@@ -270,7 +347,7 @@ export function apply(ctx, config = {}) {
       try { if ((await stat(path)).size > 262144) await rename(path,path+'.previous'); } catch {}
       await appendFile(path,JSON.stringify(record)+'\n');
     };
-    ctx.on('agent/turn-stopping', createHandler({stateDir:join(root,'dedup'),send:sendViaPowerShell,diagnostic,enabled:config.enabled!==false,getNotification}));
+    registerStopNotifier({send:sendViaPowerShell,getNotification,diagnostic});
     ctx.logger.info('Bark notification hook loaded (Windows)');
     return;
   }
@@ -308,7 +385,7 @@ export function apply(ctx, config = {}) {
       deviceName: device.value,
     });
   };
-  ctx.on('agent/turn-stopping', createHandler({stateDir:join(root,'dedup'),send:push,diagnostic,enabled:config.enabled!==false,getNotification}));
+  registerStopNotifier({send:push,getNotification,diagnostic});
   // Approval waiting: listen-only on the approval/request waterfall — notify, then pass through untouched.
   ctx.on('approval/request', (req, next) => {
     try {

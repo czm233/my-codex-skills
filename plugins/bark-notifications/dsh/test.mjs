@@ -3,7 +3,7 @@ import assert from 'node:assert/strict';
 import { mkdtemp, rm } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
-import { notificationTitle,machineLabel,createHandler,apply,replyPreview,normalizeText,approvalNotification,resolveBarkConfig,barkPushUrl,normalizeBaseUrl,BARK_DEFAULTS,BARK_PUSH_URL,sendViaBarkPush,readKeychainKey,inspectBarkConfig,formatBarkConfig,composeTitle,resolveDeviceName,MAX_DEVICE_NAME_CHARS } from './index.mjs';
+import { notificationTitle,machineLabel,createHandler,apply,replyPreview,normalizeText,approvalNotification,resolveBarkConfig,barkPushUrl,normalizeBaseUrl,BARK_DEFAULTS,BARK_PUSH_URL,sendViaBarkPush,readKeychainKey,inspectBarkConfig,formatBarkConfig,composeTitle,resolveDeviceName,MAX_DEVICE_NAME_CHARS,goalKeepsSessionRunning,hasQueuedTurn,notificationShouldWait,createStopNotifier } from './index.mjs';
 test('dedup, subagent exclusion, failure containment, no content access', async()=>{
  const root=await mkdtemp(join(tmpdir(),'dsh-bark-test-')); let calls=0;const records=[];
  try {
@@ -26,6 +26,9 @@ test('registers turn-stopping and approval/request listeners without calling sen
  const events=[];
  apply({on:(e,h)=>{events.push(e);assert.equal(typeof h,'function')},logger:{info(){}},sessionTitle:{get(){}}});
  assert.ok(events.includes('agent/turn-stopping'));
+ assert.ok(events.includes('agent/status'));
+ assert.ok(events.includes('goal/changed'));
+ assert.ok(events.includes('session/event'));
  if (process.platform==='darwin') assert.ok(events.includes('approval/request')); // macOS-only approval listener
 });
 
@@ -208,4 +211,90 @@ test('sender appends the configured device name to the title it posts',async()=>
   assert.equal(JSON.parse(calls[2].init.body).title,`构建完成｜${machineLabel({})}`); // no device: hostname fallback
   assert.equal(JSON.parse(calls[0].init.body).body,'任务完成'); // empty body falls back to a short placeholder
  });
+});
+
+// --- Goal-mode continuation gating ---
+test('only an armed active goal with rounds left keeps the session running',()=>{
+ const goal={phase:'active',activation:'armed',roundsStarted:2,maxGoalRounds:5};
+ assert.equal(goalKeepsSessionRunning(goal),true);
+ assert.equal(goalKeepsSessionRunning({...goal,roundsStarted:5}),false); // round budget exhausted
+ assert.equal(goalKeepsSessionRunning({...goal,roundsStarted:6}),false);
+ for(const phase of ['paused','blocked','complete']) assert.equal(goalKeepsSessionRunning({...goal,phase}),false,phase);
+ assert.equal(goalKeepsSessionRunning({...goal,activation:'disarmed'}),false);
+ assert.equal(goalKeepsSessionRunning(undefined),false);
+ assert.equal(goalKeepsSessionRunning({phase:'active',activation:'armed'}),false); // unknown counters fail open
+});
+
+test('queued turns are a non-stopping point; unknown goal state never silences',()=>{
+ const agent={session:{header:{id:'queue-session'}},inbox:{nextTurn:[]}};
+ assert.equal(hasQueuedTurn(agent),false);
+ assert.equal(notificationShouldWait(agent,undefined),false);
+ agent.inbox.nextTurn.push({id:'human'});
+ assert.equal(notificationShouldWait(agent,undefined),true);
+ agent.inbox.nextTurn.length=0;
+ const goals={get:()=>({phase:'active',activation:'armed',roundsStarted:1,maxGoalRounds:2})};
+ assert.equal(notificationShouldWait(agent,goals),true);
+ goals.get=()=>{throw Error('goal service unavailable')};
+ assert.equal(notificationShouldWait(agent,goals),false);
+ assert.equal(hasQueuedTurn({}),false);
+});
+
+test('goal rounds defer the notification until the session really stops',async()=>{
+ const root=await mkdtemp(join(tmpdir(),'dsh-bark-goal-'));
+ let calls=0; const sent=[];
+ const agent={session:{header:{id:'goal-session'}},status:'idle',inbox:{nextTurn:[]}};
+ let goal={phase:'active',activation:'armed',roundsStarted:1,maxGoalRounds:3};
+ const goals={get:a=>a===agent?goal:undefined};
+ const shouldDefer=a=>notificationShouldWait(a,goals);
+ const getNotification=async(agent,turn)=>({session_title:`title-${turn}`,reply_preview:`reply-${turn}`});
+ const deliver=createHandler({stateDir:root,send:async n=>{calls++;sent.push(n);return {status:'accepted'}},getNotification,shouldDefer});
+ const notifier=createStopNotifier({deliver,shouldDefer});
+ try{
+  assert.equal(await notifier.turnStopping({agent,turn:1}),'deferred');
+  assert.equal(calls,0);
+  notifier.turnStarted(agent.session); // the goal driver opened round 2
+  assert.equal(await notifier.turnStopping({agent,turn:2}),'deferred');
+  assert.equal(await notifier.idle(agent),'skipped'); // still armed: another round is coming
+  assert.equal(calls,0);
+  goal={...goal,phase:'complete',activation:'disarmed'}; // goal finished between rounds
+  assert.equal(await notifier.goalChanged(agent),'delivered');
+  assert.equal(calls,1);
+  assert.equal(sent[0].reply_preview,'reply-2'); // latest held turn, not an old one
+  assert.equal(await notifier.idle(agent),'skipped');
+  assert.equal(calls,1);
+  assert.equal(await notifier.turnStopping({agent,turn:3}),'delivered'); // final turn notifies immediately
+  assert.equal(calls,2);
+  goal={phase:'active',activation:'armed',roundsStarted:3,maxGoalRounds:3};
+  assert.equal(await notifier.turnStopping({agent,turn:4}),'delivered'); // exhausted budget is terminal
+  assert.equal(calls,3);
+  goal={phase:'active',activation:'armed',roundsStarted:1,maxGoalRounds:5};
+  assert.equal(await notifier.turnStopping({agent,turn:5}),'deferred');
+  goal={...goal,activation:'disarmed'}; // max-tokens style disarm
+  assert.equal(await notifier.idle(agent),'delivered');
+  assert.equal(calls,4);
+  goal={phase:'active',activation:'armed',roundsStarted:1,maxGoalRounds:5};
+  assert.equal(await notifier.turnStopping({agent,turn:6}),'deferred');
+  notifier.turnStarted(agent.session); // a new turn supersedes the held one
+  goal={...goal,phase:'complete',activation:'disarmed'};
+  assert.equal(await notifier.idle(agent),'skipped');
+  assert.equal(calls,4);
+ }finally{await rm(root,{recursive:true,force:true})}
+});
+
+test('a queued human turn defers until the queue drains',async()=>{
+ const root=await mkdtemp(join(tmpdir(),'dsh-bark-queue-'));
+ let calls=0;
+ const agent={session:{header:{id:'queued-session'}},status:'idle',inbox:{nextTurn:[{id:'human'}]}};
+ const goal={phase:'complete',activation:'disarmed',roundsStarted:1,maxGoalRounds:2};
+ const goals={get:()=>goal};
+ const shouldDefer=a=>notificationShouldWait(a,goals);
+ const deliver=createHandler({stateDir:root,send:async()=>{calls++;return {status:'accepted'}},getNotification:async()=>({session_title:'t',reply_preview:'r'}),shouldDefer});
+ const notifier=createStopNotifier({deliver,shouldDefer});
+ try{
+  assert.equal(await notifier.turnStopping({agent,turn:1}),'deferred');
+  assert.equal(calls,0);
+  agent.inbox.nextTurn.length=0; // the queued turn ran and the queue is empty
+  assert.equal(await notifier.idle(agent),'delivered');
+  assert.equal(calls,1);
+ }finally{await rm(root,{recursive:true,force:true})}
 });
