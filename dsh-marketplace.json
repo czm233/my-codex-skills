@@ -9,20 +9,20 @@
       "name": "dsh-bark-notifications",
       "title": "Bark Notifications",
       "description": {
-        "en": "Bark notifications after each Harness turn.",
-        "zh": "Harness 每轮回复结束后发送 Bark 通知。"
+        "en": "Bark notifications when a Harness session stops.",
+        "zh": "Harness 会话真正停下后发送 Bark 通知（目标模式自动续轮不重复推送）。"
       },
       "repository": {
         "url": "https://github.com/czm233/my-codex-skills"
       },
       "versions": [
         {
-          "version": "0.4.4",
-          "publishTimestamp": 1793867972,
+          "version": "0.4.6",
+          "publishTimestamp": 1794798059,
           "source": {
             "type": "git",
             "url": "https://github.com/czm233/my-codex-skills",
-            "commit": "3c88aa3e4f334d5bee5cc9735610253793f3273b",
+            "commit": "b49c6c611bf7d0e08310b3e2861e51b09d93b173",
             "path": "plugins/bark-notifications"
           }
         }
