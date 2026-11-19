@@ -1,0 +1,15 @@
+# DSH 技能同步清单：install.sh / install.ps1 按此表安装
+# 列：技能名<TAB>安装根（dsh = ~/.dsh/skills，agents = ~/.agents/skills）
+# 只有自研技能进表；第三方技能（agent-reach、reverse-engineer-anything、answer-me-with-html、bailian-*）由各自安装器管理，不进表。
+discuss	dsh
+guided-exploration	dsh
+macos-app-dev	dsh
+new-project	dsh
+token-plan-quota	dsh
+apifox-helper	agents
+deploy-checklist	agents
+git-commit-prep	agents
+hotfix-worktree	agents
+obsidian-notes	agents
+dsh-plugin-sync	agents
+ui-review	agents

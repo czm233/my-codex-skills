@@ -36,3 +36,10 @@
 - `plugins/bark-notifications/skills/bark-notifications/references/codex-hook-setup.md` 必须面向不了解当前项目和对话的 Agent，完整说明：安装或更新用户级插件、保存本机 Bark Key、配置机器标识、插件 Hook 生命周期、审核与信任 Hook、Dry-run、真实设备验证、故障排查以及敏感信息边界。
 - 插件 Hook 只读取当前 Thread 的用户可见标题元数据，以及 Stop 事件自带的最后一条回复（`last_assistant_message`）以生成前 30 字预览；不读取转录文件或历史回合，不发送完整回复、密钥或 Cookie，不将标题或预览写入诊断日志。通知标题使用“Thread 标题｜设备名”：设备名只从本机配置读取（`device_name`，回退 `machine_label` / 电脑名称 / `Mac`），不是调用参数，Agent 只传标题；标题已含 `｜` 时不再拼接。正文使用回复前 30 个字符，截断时追加省略号；标题或回复预览不可用时静默跳过。设备名也用于 Bark 分组。配置缺失或不可用时必须有明确、安全的回退行为；通知失败不得影响 Codex 主任务。
 - 发布前除插件校验和本机安装插件真实调用外，还必须覆盖多机相关场景：两个不同机器标识可区分、未配置机器标识的回退、特殊字符与长度限制、不同用户目录或 `CODEX_HOME`，以及示例中不存在真实凭证和维护电脑专属值。
+
+## DSH 技能同步约束
+
+- 自研 DSH 技能源码统一维护在 `skills/`，必须登记进根目录 `skills.sync.tsv`（`dsh` = `~/.dsh/skills`，`agents` = `~/.agents/skills`）；两个根都是 DSH 的技能加载目录。
+- 技能改动只改仓库，不改本机安装副本；安装一律跑 `install.sh`（macOS，符号链接）或 `install.ps1`（Windows，Junction 优先、退回复制），保证 git pull 后链接副本即刻生效。
+- 安装脚本遇到本机副本与仓库内容不同会跳过并警告，必须向用户说明差异，不得用 `--force`/`-Force` 静默覆盖。
+- 第三方技能（agent-reach、reverse-engineer-anything、answer-me-with-html、bailian-* 等安装器产物）不进仓库、不进清单、不由本仓同步。

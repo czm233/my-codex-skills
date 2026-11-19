@@ -18,6 +18,9 @@ my-codex-skills/
 │   ├── after-dev/          # dev-workflow 插件的仓库源副本
 │   ├── reflect/            # 从纠错中提炼候选规则，经审核后写入项目记忆
 │   └── simple/             # 把复杂内容解释清楚并生成配套图表
+├── skills.sync.tsv         # DSH 技能同步清单（哪些技能、装到哪个根目录）
+├── install.sh              # macOS 技能安装脚本（符号链接）
+├── install.ps1             # Windows 技能安装脚本（Junction，失败退回复制）
 └── templates/
     └── skill-template/     # 新技能模板
 ```
@@ -31,6 +34,17 @@ my-codex-skills/
 | `ui-review` | 跨平台 UI 客观可用性体检、评分，以及真实问题与解决办法的增量记录 | `skills/ui-review` |
 | `reflect` | 复盘人类纠正过程，提炼有边界的候选规则，经审核后写入项目 `AGENTS.md` | `skills/reflect` |
 | `simple` | 用易懂中文、流程图、时序图和对照表解释复杂内容 | `skills/simple` |
+| `dsh-plugin-sync` | 双机同步自研 DSH 插件与技能（见下方 DSH 技能双机同步） | `skills/dsh-plugin-sync` |
+| `token-plan-quota` | 查询阿里云百炼 Token Plan 套餐额度、过期重新授权 | `skills/token-plan-quota` |
+| `guided-exploration` | 引导式问答：表格/流程图代替长文，需求引导细化 | `skills/guided-exploration` |
+| `discuss` | 讨论模式：只讲清楚不动手，图示化讲解系统 | `skills/discuss` |
+| `new-project` | 新想法立项：查重起名、建 GitHub 仓库并 clone | `skills/new-project` |
+| `macos-app-dev` | macOS App 开发规范：TCC 弹窗、签名、权限根治 | `skills/macos-app-dev` |
+| `obsidian-notes` | Obsidian 知识库保存、更新、搜索与去重维护 | `skills/obsidian-notes` |
+| `apifox-helper` | 导出接口文档到 Apifox、枚举转 apifox-enum Schema | `skills/apifox-helper` |
+| `deploy-checklist` | 按代码变更生成部署清单（迁移/脚本/环境变量/前后端） | `skills/deploy-checklist` |
+| `git-commit-prep` | 提交前准备：清临时脚本、生成中文 commit message | `skills/git-commit-prep` |
+| `hotfix-worktree` | 基于 git worktree 的热修复工作流（create/start/push/remove） | `skills/hotfix-worktree` |
 
 `before-dev` 和 `after-dev` 的仓库源目录保留用于版本追踪；本机不单独安装这两个副本，实际运行使用 `plugins/dev-workflow` 插件内的版本。
 
@@ -79,6 +93,15 @@ codex plugin add dev-workflow@my-codex-skills
 codex plugin marketplace upgrade my-codex-skills
 codex plugin add dev-workflow@my-codex-skills
 ```
+
+## DSH 技能双机同步
+
+DSH 从两个本地目录读技能：`~/.dsh/skills/` 与 `~/.agents/skills/`，没有技能市场；多机一致性由本仓库保证：
+
+1. 自研 DSH 技能源码统一放 `skills/`，登记进 `skills.sync.tsv`（第二列指定装到 `dsh` 还是 `agents` 根；第三方技能不入表，由各自安装器管理）。
+2. 任一台电脑改完技能：改仓库 → 本机验证 → push；另一台 `git pull` 后重跑安装脚本即生效（macOS 符号链接、Windows Junction 都直连仓库，pull 后无需重装）。
+3. 安装：macOS `./install.sh`，Windows `.\install.ps1`；`--force`/`-Force` 才允许覆盖与仓库有差异的本机副本。
+4. 用户说「同步插件」时，`$dsh-plugin-sync` 会连技能一起走「接上 + 上线」。
 
 ## 安全约定
 
