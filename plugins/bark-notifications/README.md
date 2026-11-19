@@ -108,13 +108,13 @@ Codex 入口（`skills/bark-notifications/bin/bark-task-complete`）读的是 `~
 
 ## 统一发布与更新
 
-源码唯一来源：https://github.com/czm233/my-codex-skills 。修改插件时同步提高 `package.json`、`.codex-plugin/plugin.json` 和根目录 `marketplace.json` 中 Bark 条目的版本号。推送主分支后，GitHub Actions 验证 Windows/macOS，再生成固定提交的 Harness 市场目录；检查工作流成功后通知设备更新。
+源码分工（2026-11-19 起）：DSH 插件部分（`dsh/`、`package.json`、`locale`、`cordis.patch.yml`）已迁往 https://github.com/czm233/my-dsharness-plugin 的 `dsh-bark-notifications/` 目录；本仓只保留 Codex/Hook 部分（`.codex-plugin`、`hooks`、`skills`、Python 测试）。修改时在对应仓库提高版本号：DSH 部分同步 `my-dsharness-plugin` 根目录 `index.json`；Codex 部分同步 `package.json`、`.codex-plugin/plugin.json` 和根目录 `marketplace.json` 中 Bark 条目的版本号。推送主分支后，GitHub Actions 验证 Windows/macOS。
 
-Harness：启用「自定义插件市场」，在「发现」添加索引：
+Harness：插件已改由「czm 的 DSH 插件」市场分发，在「发现」使用索引：
 
-`https://raw.githubusercontent.com/czm233/my-codex-skills/main/dsh-marketplace.json`
+`https://raw.githubusercontent.com/czm233/my-dsharness-plugin/main/index.json`
 
-刷新索引，选择 Bark Notifications 的新版本安装。当前 Harness 对第三方包可能要求先卸载再安装新版；卸载插件不会删除本插件放在 `%LOCALAPPDATA%\DSHBark` 的设置与凭证。需要重启时按客户端提示操作。首次安装仍需完成本地凭证配置；更新不会改变已有设置。
+刷新索引，选择 Bark 通知的新版本安装。当前 Harness 对第三方包可能要求先卸载再安装新版；卸载插件不会删除本插件放在 `%LOCALAPPDATA%\DSHBark` 的设置与凭证。需要重启时按客户端提示操作。首次安装仍需完成本地凭证配置；更新不会改变已有设置。
 
 Codex：从同一 GitHub 仓库刷新市场并安装新版：
 
