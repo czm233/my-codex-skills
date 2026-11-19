@@ -1,6 +1,6 @@
 ---
 name: dsh-plugin-sync
-description: 在公司 MacBook 与家里 Windows 之间同步自研 DSH 插件：任一台做好的插件，另一台立刻接上可用。用户说「同步插件」「插件上线」「插件接上」时使用。只同步插件代码与安装登记；用户级配置、画布、角色库、密钥一律不搬；插件仓有未提交改动时直接停止交用户处理。
+description: 在公司 MacBook 与家里 Windows 之间同步自研 DSH 插件与自研技能：任一台做好的插件或技能，另一台立刻接上可用。用户说「同步插件」「同步技能」「插件上线」「插件接上」「技能接上」时使用。只同步插件代码、安装登记与 skills.sync.tsv 清单内的技能；用户级配置、画布、角色库、密钥一律不搬；相关仓库有未提交改动时直接停止交用户处理。
 allowed-tools: Bash, Read, Write, Edit, Glob, Grep
 ---
 
@@ -30,6 +30,17 @@ allowed-tools: Bash, Read, Write, Edit, Glob, Grep
 ## 「同步插件」
 
 = 先接上、再上线，连做一遍。
+
+## 技能同步（与插件同套路，另一个仓库）
+
+技能没有市场机制：DSH 只读本地两个目录 `~/.dsh/skills/` 与 `~/.agents/skills/`。多机一致性靠技能仓 `~/githubProject/my-codex-skills`（Mac 与 Windows 同构）+ 根目录 `skills.sync.tsv` 清单 + `install.sh`（macOS 符号链接）/ `install.ps1`（Windows Junction 优先）：
+
+1. 技能改动只改技能仓 `skills/<名>/`，不改本机安装副本；改完按该仓 AGENTS.md 验证后 push。
+2. 「技能接上」：技能仓 `git pull --rebase --autostash`（脏工作区 → 停止交用户）→ 跑安装脚本 → 逐项确认输出「＋/＝」，出现「！跳过」的列出差异交用户裁决，不要擅自 `-Force`。
+3. 「技能上线」：pull → 脏区检查 → `git push`（用户说上线即授权）。
+4. 「同步技能」= 先接上、再上线。说「同步插件/插件上线」时若技能仓也有远端新提交，顺带做第 2 步并告知。
+5. 新增/删除技能要同时改 `skills.sync.tsv`（第二列 dsh 或 agents）并同步删除另一台的本机安装目录；第三方技能（agent-reach、reverse-engineer-anything、answer-me-with-html、bailian-*）不入清单、不同步。
+6. 新机器首次：clone 技能仓到标准位置 → 跑安装脚本 → 提醒重启 DSH（技能目录在会话启动时读取）。
 
 ## 首次接上（任一台第一次）
 
