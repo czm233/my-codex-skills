@@ -34,7 +34,6 @@ my-codex-skills/
 | `ui-review` | 跨平台 UI 客观可用性体检、评分，以及真实问题与解决办法的增量记录 | `skills/ui-review` |
 | `reflect` | 复盘人类纠正过程，提炼有边界的候选规则，经审核后写入项目 `AGENTS.md` | `skills/reflect` |
 | `simple` | 用易懂中文、流程图、时序图和对照表解释复杂内容 | `skills/simple` |
-| `dsh-plugin-sync` | 双机同步自研 DSH 插件与技能（见下方 DSH 技能双机同步） | `skills/dsh-plugin-sync` |
 | `token-plan-quota` | 查询阿里云百炼 Token Plan 套餐额度、过期重新授权 | `skills/token-plan-quota` |
 | `guided-exploration` | 引导式问答：表格/流程图代替长文，需求引导细化 | `skills/guided-exploration` |
 | `discuss` | 讨论模式：只讲清楚不动手，图示化讲解系统 | `skills/discuss` |
@@ -101,7 +100,7 @@ DSH 从两个本地目录读技能：`~/.dsh/skills/` 与 `~/.agents/skills/`，
 1. 自研 DSH 技能源码统一放 `skills/`，登记进 `skills.sync.tsv`（第二列指定装到 `dsh` 还是 `agents` 根；第三方技能不入表，由各自安装器管理）。
 2. 任一台电脑改完技能：改仓库 → 本机验证 → push；另一台 `git pull` 后重跑安装脚本即生效（macOS 符号链接、Windows Junction 都直连仓库，pull 后无需重装）。
 3. 安装：macOS `./install.sh`，Windows `.\install.ps1`；`--force`/`-Force` 才允许覆盖与仓库有差异的本机副本。
-4. 用户说「同步插件」时，`$dsh-plugin-sync` 会连技能一起走「接上 + 上线」。
+4. 原 skill `dsh-plugin-sync` 已删除（2026-11-19）；插件双机同步改为手动：插件仓 `git pull` + 按需补 profile 登记表 + `pnpm install`（见 my-dsharness-plugin 的 WINDOWS-SETUP.md）。
 
 ## 安全约定
 

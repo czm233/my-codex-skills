@@ -11,5 +11,4 @@ deploy-checklist	agents
 git-commit-prep	agents
 hotfix-worktree	agents
 obsidian-notes	agents
-dsh-plugin-sync	agents
 ui-review	agents
