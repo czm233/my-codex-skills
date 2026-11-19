@@ -16,38 +16,38 @@ line_ok() { [ -n "$1" ] && [ -n "$2" ]; }
 
 installed=0; skipped=0; warned=0
 while IFS=$'\t' read -r name root; do
-	case "$name" in ''|'#'*) continue;; esac
-	line_ok "$name" "$root" || { echo "× 清单行格式错误：$name|$root"; exit 1; }
-	case "$root" in
-		dsh)    target="$HOME/.dsh/skills/$name" ;;
-		agents) target="$HOME/.agents/skills/$name" ;;
-		*) echo "× 未知根 $root（$name）"; exit 1 ;;
+	case "${name}" in ''|'#'*) continue;; esac
+	line_ok "${name}" "${root}" || { echo "× 清单行格式错误：${name}|${root}"; exit 1; }
+	case "${root}" in
+		dsh)    target="${HOME}/.dsh/skills/${name}" ;;
+		agents) target="${HOME}/.agents/skills/${name}" ;;
+		*) echo "× 未知根 ${root}（${name}）"; exit 1 ;;
 	esac
-	src="$REPO/skills/$name"
-	[ -d "$src" ] || { echo "× 仓库缺技能目录：$name"; exit 1; }
-	mkdir -p "$(dirname "$target")"
+	src="${REPO}/skills/${name}"
+	[ -d "${src}" ] || { echo "× 仓库缺技能目录：${name}"; exit 1; }
+	mkdir -p "$(dirname "${target}")"
 
-	if [ -L "$target" ]; then
-		cur="$(readlink "$target")"
-		if [ "$cur" = "$src" ]; then
-			echo "＝ $name（已链接）"; skipped=$((skipped+1)); continue
+	if [ -L "${target}" ]; then
+		cur="$(readlink "${target}")"
+		if [ "${cur}" = "${src}" ]; then
+			echo "＝ ${name}（已链接）"; skipped=$((skipped+1)); continue
 		fi
-		echo "！$name 链接指向别处（$cur），跳过"; warned=$((warned+1)); continue
+		echo "！${name} 链接指向别处（${cur}），跳过"; warned=$((warned+1)); continue
 	fi
 
-	if [ -d "$target" ]; then
-		if diff -rq "$src" "$target" >/dev/null 2>&1; then
-			rm -rf "$target"
-		elif [ "$FORCE" = 1 ]; then
-			echo "！$name 本机有差异，--force 覆盖"
-			rm -rf "$target"
+	if [ -d "${target}" ]; then
+		if diff -rq "${src}" "${target}" >/dev/null 2>&1; then
+			rm -rf "${target}"
+		elif [ "${FORCE}" = 1 ]; then
+			echo "！${name} 本机有差异，--force 覆盖"
+			rm -rf "${target}"
 		else
-			echo "！$name 本机版本与仓库不同，跳过（确认后用 --force 覆盖）"; warned=$((warned+1)); continue
+			echo "！${name} 本机版本与仓库不同，跳过（确认后用 --force 覆盖）"; warned=$((warned+1)); continue
 		fi
 	fi
 
-	ln -s "$src" "$target"
-	echo "＋ $name → $root"; installed=$((installed+1))
-done < "$REPO/skills.sync.tsv"
+	ln -s "${src}" "${target}"
+	echo "＋ ${name} → ${root}"; installed=$((installed+1))
+done < "${REPO}/skills.sync.tsv"
 
-echo "完成：新装 $installed，已最新 $skipped，需人工确认 $warned"
+echo "完成：新装 ${installed}，已最新 ${skipped}，需人工确认 ${warned}"
